@@ -61,9 +61,9 @@ Example CSV output:
 
 #### *What should we do with the outputs after we're done running these scripts?*
 
-LogicMonitor recommends reviewing the contents of the script prior to sharing with LogicMonitor, so as to ensure comfort with the information being provided. The outputs can be downloaded from the provider's cloud shell:
+LogicMonitor recommends reviewing the output(s) of the script(s) prior to sharing with LogicMonitor, so as to ensure comfort with the information being provided.
 
-Downloading the outputs:
+The outputs can be downloaded from the provider's cloud shell:
 * [Download a file from AWS CloudShell](https://docs.aws.amazon.com/cloudshell/latest/userguide/getting-started.html#download-file)
 * [Download Files from the Azure Cloud Shell](https://learn.microsoft.com/en-us/azure/cloud-shell/persisting-shell-storage#download-files-in-azure-cloud-shell)
 
