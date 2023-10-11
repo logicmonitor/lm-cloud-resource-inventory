@@ -13,7 +13,7 @@ LM Cloud Resource Inventory collects the names of cloud resource groups, the typ
 
 #### *How will LogicMonitor use this data?*
 
-The data collected will be used to accurately scope the quantity of LogicMonitor cloud resource licenses required for quoting. For example, the scripts will return the total number of AWS or Azure IaaS or PaaS resources in an account/ subscription.
+The data collected will be used to accurately scope the quantity of LogicMonitor cloud resource licenses required for quoting. For example, the scripts will return the total number of IaaS or PaaS resources in an AWS account or Azure subscription.
 
 #### *What language are these scripts written in?*
 
