@@ -37,7 +37,7 @@ Azure
 
 #### *What permissions are required by the scripts to run against my cloud environments?*
 
-The scripts do not execute any write operations against a cloud account; however, best practice recommendation is to run the scripts with a read-only account.
+The scripts will utilize the permissions of the currently logged-in cloud account, and while the scripts do not execute any write operations against a cloud account, best practice recommendation is to run the scripts with a read-only account.
 
 AWS
 * Minimum required role: ReadOnly (best practice is to use an account with only ReadOnly access.)
