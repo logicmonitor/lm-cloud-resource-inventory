@@ -49,15 +49,24 @@ Azure
 
 No, the script(s) don’t establish any external connections, they simply query Azure and AWS, and write output to a .csv file.
 
+#### *How long should it take to run these scripts?*
+
+AWS
+* The AWS script may take up to an hour as it needs to check per service, per region, for accessible resources.
+
+Azure
+* The Azure script may take up to ten minutes to successfully collect data.
+
 #### *What outputs do the scripts provide?*
 
 The script outputs are provided as CSV files that can be reviewed by customers, prior to sharing with LogicMonitor.
-* aws_resources.csv
-* azure_resources.csv
+* aws_resource_count_output.csv
+* azure_resource_count_output.csv
 
 Example CSV output:
-* resource group, service type, number of resources
-* azure-group, microsoft.automation/automationaccounts, 2
+* IaaS,71
+* PaaS,15
+* Non-Compute,349
 
 #### *What should we do with the outputs after we're done running these scripts?*
 
