@@ -19,8 +19,6 @@ The data collected will be used to accurately scope the quantity of LogicMonitor
 
 The scripts provided are shell scripts that LogicMonitor recommends executing at the cloud provider CLI.
 
-For interested parties, a PowerShell version of the script(s) (might also be? TBD!) available.
-
 #### *Where should I execute these scripts in order to successfully collect data?*
 
 In order to minimize setup requirements, and for purposes of expediency, LogicMonitor recommends execution of the scripts in the relevant cloud provider CLI.
