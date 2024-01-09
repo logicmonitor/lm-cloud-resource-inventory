@@ -1,4 +1,4 @@
-#!/usr/local/bin/bash
+#!/bin/bash
 
 #############
 # VARIABLES #
@@ -23,63 +23,63 @@ declare -A charged_datasource_dict=(
 )
 
 declare -A no_charged_datasource_dict=(
-  ["microsoft.apimanagement/service"]="PaaS_Non_Charged"
-  ["microsoft.network/applicationgateways"]="PaaS_Non_Charged"
-  ["microsoft.web/hostingenvironments"]="PaaS_Non_Charged"
-  ["microsoft.web/serverfarms"]="PaaS_Non_Charged"
-  ["microsoft.recoveryservices/vaults"]="PaaS_Non_Charged"
-  ["microsoft.recoveryservices/vaults/backupfabrics/protectioncontainers/protecteditems"]="PaaS_Non_Charged"
-  ["microsoft.recoveryservices/vaults/backupjobs"]="PaaS_Non_Charged"
-  ["microsoft.batch/batchaccounts"]="PaaS_Non_Charged"
-  ["microsoft.search/searchservices"]="PaaS_Non_Charged"
-  ["microsoft.cognitiveservices/accounts"]="PaaS_Non_Charged"
-  ["microsoft.documentdb/databaseaccounts"]="PaaS_Non_Charged"
-  ["microsoft.eventgrid/topics"]="PaaS_Non_Charged"
-  ["microsoft.eventhub/namespaces"]="PaaS_Non_Charged"
-  ["microsoft.network/expressroutecircuits"]="ds_expresPaaS_Non_Chargedsroutecircuits_azure"
-  ["microsoft.network/azurefirewalls"]="PaaS_Non_Charged"
-  ["microsoft.network/frontdoors"]="PaaS_Non_Charged"
-  ["microsoft.devices/iothubs"]="PaaS_Non_Charged"
-  ["microsoft.keyvault/vaults"]="PaaS_Non_Charged"
-  ["microsoft.network/loadbalancers"]="PaaS_Non_Charged"
-  ["microsoft.logic/workflows"]="PaaS_Non_Charged"
-  ["microsoft.machinelearningservices/workspaces"]="PaaS_Non_Charged"
-  ["microsoft.notificationhubs/namespaces"]="PaaS_Non_Charged"
-  ["microsoft.relay/namespaces"]="PaaS_Non_Charged"
-  ["microsoft.servicebus/namespaces"]="PaaS_Non_Charged"
-  ["microsoft.operationalinsights/workspaces"]="PaaS_Non_Charged"
-  ["microsoft.servicefabricmesh/applications"]="PaaS_Non_Charged"
-  ["microsoft.signalrservice/signalr"]="PaaS_Non_Charged"
-  ["microsoft.synapse/workspaces"]="PaaS_Non_Charged"
-  ["microsoft.compute/virtualmachines"]="PaaS_Non_Charged"
-  ["microsoft.network/virtualnetworkgateways"]="PaaS_Non_Charged"
-  ["microsoft.automation/automationaccounts"]="PaaS_Non_Charged"
-  ["microsoft.network/virtualhubs"]="PaaS_Non_Charged"
-  ["microsoft.network/vpngateways"]="PaaS_Non_Charged"
-  ["microsoft.cdn/profiles"]="PaaS_Non_Charged"
-  ["microsoft.netapp/netappaccounts"]="PaaS_Non_Charged"
-  ["microsoft.network/networkinterfaces"]="PaaS_Non_Charged"
-  ["microsoft.insights/components"]="PaaS_Non_Charged"
-  ["microsoft.datalakeanalytics/accounts"]="PaaS_Non_Charged"
-  ["microsoft.datalakestore/accounts"]="PaaS_Non_Charged"
-  ["microsoft.storage/storageaccounts/file"]="PaaS_Non_Charged"
-  ["microsoft.storage/storageaccounts/blob"]="PaaS_Non_Charged"
-  ["microsoft.storage/storageaccounts/table"]="PaaS_Non_Charged"
-  ["microsoft.storage/storageaccounts/queue"]="PaaS_Non_Charged"
-  ["microsoft.storage/storageaccounts"]="PaaS_Non_Charged"
-  ["microsoft.network/publicipaddresses"]="PaaS_Non_Charged"
-  ["microsoft.network/trafficmanagerprofiles"]="PaaS_Non_Charged"
-  ["microsoft.streamanalytics/streamingjobs"]="PaaS_Non_Charged"
-  ["microsoft.dbformysql/flexibleservers"]="PaaS_Non_Charged"
-  ["microsoft.dbforpostgresql/servergroupsv2"]="PaaS_Non_Charged"
-  ["microsoft.compute/virtualmachinescalesets"]="PaaS_Non_Charged"
+  ["microsoft.apimanagement/service"]="Non-compute"
+  ["microsoft.network/applicationgateways"]="Non-compute"
+  ["microsoft.web/hostingenvironments"]="Non-compute"
+  ["microsoft.web/serverfarms"]="Non-compute"
+  ["microsoft.recoveryservices/vaults"]="Non-compute"
+  ["microsoft.recoveryservices/vaults/backupfabrics/protectioncontainers/protecteditems"]="Non-compute"
+  ["microsoft.recoveryservices/vaults/backupjobs"]="Non-compute"
+  ["microsoft.batch/batchaccounts"]="Non-compute"
+  ["microsoft.search/searchservices"]="Non-compute"
+  ["microsoft.cognitiveservices/accounts"]="Non-compute"
+  ["microsoft.documentdb/databaseaccounts"]="Non-compute"
+  ["microsoft.eventgrid/topics"]="Non-compute"
+  ["microsoft.eventhub/namespaces"]="Non-compute"
+  ["microsoft.network/expressroutecircuits"]="ds_expresNon-computesroutecircuits_azure"
+  ["microsoft.network/azurefirewalls"]="Non-compute"
+  ["microsoft.network/frontdoors"]="Non-compute"
+  ["microsoft.devices/iothubs"]="Non-compute"
+  ["microsoft.keyvault/vaults"]="Non-compute"
+  ["microsoft.network/loadbalancers"]="Non-compute"
+  ["microsoft.logic/workflows"]="Non-compute"
+  ["microsoft.machinelearningservices/workspaces"]="Non-compute"
+  ["microsoft.notificationhubs/namespaces"]="Non-compute"
+  ["microsoft.relay/namespaces"]="Non-compute"
+  ["microsoft.servicebus/namespaces"]="Non-compute"
+  ["microsoft.operationalinsights/workspaces"]="Non-compute"
+  ["microsoft.servicefabricmesh/applications"]="Non-compute"
+  ["microsoft.signalrservice/signalr"]="Non-compute"
+  ["microsoft.synapse/workspaces"]="Non-compute"
+  ["microsoft.compute/virtualmachines"]="Non-compute"
+  ["microsoft.network/virtualnetworkgateways"]="Non-compute"
+  ["microsoft.automation/automationaccounts"]="Non-compute"
+  ["microsoft.network/virtualhubs"]="Non-compute"
+  ["microsoft.network/vpngateways"]="Non-compute"
+  ["microsoft.cdn/profiles"]="Non-compute"
+  ["microsoft.netapp/netappaccounts"]="Non-compute"
+  ["microsoft.network/networkinterfaces"]="Non-compute"
+  ["microsoft.insights/components"]="Non-compute"
+  ["microsoft.datalakeanalytics/accounts"]="Non-compute"
+  ["microsoft.datalakestore/accounts"]="Non-compute"
+  ["microsoft.storage/storageaccounts/file"]="Non-compute"
+  ["microsoft.storage/storageaccounts/blob"]="Non-compute"
+  ["microsoft.storage/storageaccounts/table"]="Non-compute"
+  ["microsoft.storage/storageaccounts/queue"]="Non-compute"
+  ["microsoft.storage/storageaccounts"]="Non-compute"
+  ["microsoft.network/publicipaddresses"]="Non-compute"
+  ["microsoft.network/trafficmanagerprofiles"]="Non-compute"
+  ["microsoft.streamanalytics/streamingjobs"]="Non-compute"
+  ["microsoft.dbformysql/flexibleservers"]="Non-compute"
+  ["microsoft.dbforpostgresql/servergroupsv2"]="Non-compute"
+  ["microsoft.compute/virtualmachinescalesets"]="Non-compute"
 )
 
 declare -A service_count=(
   ["IaaS"]=0
   ["PaaS"]=0
-  ["PaaS_Non_Charged"]=0
-  ["Non_Supported"]=0
+  ["Non-compute"]=0
+  ["Non-compute"]=0
 )
 
 azure_resources_csv_file="azure_resources_csv_file"
@@ -154,6 +154,8 @@ fi
 # Loop through all resource groups in the subscription
 for rg in $(az group list --query "[].name" -o tsv)
 do
+  echo "Calculating resources for resource group: $rg"
+
   # Declare an associative array to store the count of each service type
   declare -A resource_count
 
@@ -198,15 +200,19 @@ while IFS=, read -r resource_group_name resource_type count; do
     type="${charged_datasource_dict[$lowercase_resource_type]}"
     service_count[$type]=$((service_count[$type]+$count))
   elif [ -n "${no_charged_datasource_dict[$lowercase_resource_type]}" ]; then
-    service_count["PaaS_Non_Charged"]=$((service_count["PaaS_Non_Charged"]+$count))
+    service_count["Non-compute"]=$((service_count["Non-compute"]+$count))
   else
-    service_count["Non_Supported"]=$((service_count["Non_Supported"]+$count))
+    service_count["Unsupported"]=$((service_count["Unsupported"]+$count))
   fi
 done < "$azure_resources_csv_file"
 
+# Create file with results
+echo "Category,Number" >> "$output_csv_file"
 for key in "${!service_count[@]}"; do
-    value="${service_count[$key]}"
-    echo "$key,$value" >> "$output_csv_file"
+    if [ $key != "Unsupported" ]; then
+      value="${service_count[$key]}"
+      echo "$key,$value" >> "$output_csv_file"
+    fi
   done
 
 

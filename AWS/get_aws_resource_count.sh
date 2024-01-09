@@ -363,4 +363,4 @@ echo "Done! Results saved in aws_resource_count_output.csv."
 
 echo "IaaS",$iaas_count >>aws_resource_count_output.csv
 echo "PaaS",$paas_count >>aws_resource_count_output.csv
-echo "PaaS(Non-charged)",$paas_non_charged_count >>aws_resource_count_output.csv
+echo "Non-compute",$paas_non_charged_count >>aws_resource_count_output.csv
