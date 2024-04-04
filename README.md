@@ -32,6 +32,7 @@ AWS
 Azure
 * [How to install the Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli)
 * Required extensions: resource-graph, virtual-wan
+* Required version of bash: 5.0 or later (if using azure cloud shell, this should already be on the latest verison)
 
 #### *What permissions are required by the scripts to run against my cloud environments?*
 

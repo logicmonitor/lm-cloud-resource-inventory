@@ -82,17 +82,19 @@ declare -A service_count=(
   ["Non-compute"]=0
 )
 
+#Default values
 azure_resources_csv_file="azure_resources_csv_file"
+output_csv_file="azure_resource_count_output.csv"
 
 #############
 # FUNCTIONS #
 #############
 
 show_help() {
-    echo "Usage: $0 [-h] [output_file_name]"
-    echo "  -h                Display this help message."
-    echo "  output_file_name  Output file name. If not provided, the default name"
-    echo "                    will be used - azure_resource_count_output.csv."
+    echo "Usage: $0 [-h] [-o output_file_name] [-s subscriptions]"
+    echo " -h help                Display this help message."
+    echo " -s subscriptions       Comma separated list of subscriptions to include in the resource count. If not provided, all subscriptions will be included."
+    echo " -o output_file_name    Output file name. If not provided, the default name will be used - azure_resource_count_output.csv."
     exit 0
 }
 
@@ -135,62 +137,84 @@ to_lowercase() {
 #    MAIN   #
 #############
 
-# Check if the -h option is provided
-if [ "$1" == "-h" ] || [ "$1" == "-help" ]; then
-    show_help
-fi
-
-# Check if output file is provided
-if [ -z "$1" ]; then
-    output_csv_file="azure_resource_count_output.csv"  # Use the default value
-else
-    output_csv_file="$1"  # Use customer provided name
-fi
-
-if [ -f "$azure_resources_csv_file" ]; then
-    rm -f "$azure_resources_csv_file"
-fi
-
-# Loop through all resource groups in the subscription
-for rg in $(az group list --query "[].name" -o tsv)
+# Get options from the command line
+while getopts s:o:h flag
 do
-  echo "Calculating resources for resource group: $rg"
-
-  # Declare an associative array to store the count of each service type
-  declare -A resource_count
-
-  # Get the list of resources in each resource group and their types
-  resource_types=$(az resource list -g $rg --query "[].type" -o tsv)
-
-  # Loop through each resource type in the resource group
-  for resource_type in $resource_types
-  do
-    # Increment the count for the specific resource type
-    resource_count[$resource_type]=$((resource_count[$resource_type]+1))
-  done
-
-  # Print the count of each service type as CSV
-  for key in "${!resource_count[@]}"; do
-    echo "$rg,$key,${resource_count[$key]}" >> $azure_resources_csv_file
-  done
-  unset resource_count
+    case "${flag}" in
+        s) IFS=',' read -r -a subArray <<< "${OPTARG}";;
+        o) output_csv_file="${OPTARG}";;
+        h) show_help;;
+    esac
 done
+shift $((OPTIND-1))
 
-
-# Retrieve the list of VMSS instances
-vmss_list=$(az vmss list --query "[].id" -o tsv)
-
-# Loop through each VMSS instance
-if [ -n "$vmss_list" ]; then
-  while IFS= read -r vmss_name
-  do
-    # Retrieve the list of virtual machines in the VMSS
-    name=$(echo "$vmss_name" | sed 's/.*\///')
-    resource_group=$(echo "$vmss_name" | sed 's/.*\/resourceGroups\/\([^/]*\).*/\1/')
-    vm_list=$(az vmss list-instances --name "$name" --resource-group "$resource_group" --query "[].{ResourceGroup: resourceGroup, Type: type}" -o tsv)
-    count_resources "$vm_list" "microsoft.compute/virtualmachinescalesets/virtualmachines"
-  done <<< "$vmss_list"
+# Remove previous azure resource file if it exists
+if [ -f "$azure_resources_csv_file" ]; then
+  rm -f "$azure_resources_csv_file"
 fi
+
+# Remove previous resource count file if it exists
+if [ -f "$output_csv_file" ]; then
+  echo "Removing previous output file: $output_csv_file"
+  rm -f "$output_csv_file"
+fi
+
+#If no subscriptions are provided, get all subscriptions
+if [ ${#subArray[@]} -eq 0 ]; then
+  echo "No subscriptions provided. Getting all subscriptions."
+  # Store the command output in a variable
+  subNames=$(az account list --query "[].name" -o tsv)
+
+  # Read the output into an array, splitting by line
+  IFS=$'\n' read -r -d '' -a subArray <<< "$subNames"
+fi
+
+#Grab all the subscriptions and loop through them
+echo "Checking ${#subArray[@]} subscriptions for resources."
+for subscription in "${subArray[@]}"
+do
+  echo "Calculating resources for subscription: $subscription"
+  az account set --subscription "$subscription"
+  # Loop through all resource groups in the subscription
+  for rg in $(az group list --query "[].name" -o tsv)
+  do
+    echo "Calculating resources for resource group: $subscription/$rg"
+
+    # Declare an associative array to store the count of each service type
+    declare -A resource_count
+
+    # Get the list of resources in each resource group and their types
+    resource_types=$(az resource list -g $rg --query "[].type" -o tsv)
+
+    # Loop through each resource type in the resource group
+    for resource_type in $resource_types
+    do
+      # Increment the count for the specific resource type
+      resource_count[$resource_type]=$((resource_count[$resource_type]+1))
+    done
+
+    # Print the count of each service type as CSV
+    for key in "${!resource_count[@]}"; do
+      echo "$rg,$key,${resource_count[$key]}" >> $azure_resources_csv_file
+    done
+    unset resource_count
+  done
+
+  # Retrieve the list of VMSS instances
+  vmss_list=$(az vmss list --query "[].id" -o tsv)
+
+  # Loop through each VMSS instance
+  if [ -n "$vmss_list" ]; then
+    while IFS= read -r vmss_name
+    do
+      # Retrieve the list of virtual machines in the VMSS
+      name=$(echo "$vmss_name" | sed 's/.*\///')
+      resource_group=$(echo "$vmss_name" | sed 's/.*\/resourceGroups\/\([^/]*\).*/\1/')
+      vm_list=$(az vmss list-instances --name "$name" --resource-group "$resource_group" --query "[].{ResourceGroup: resourceGroup, Type: type}" -o tsv)
+      count_resources "$vm_list" "microsoft.compute/virtualmachinescalesets/virtualmachines"
+    done <<< "$vmss_list"
+  fi
+done
 
 # Calculate number of PaaS, IaaS, etc. services
 while IFS=, read -r resource_group_name resource_type count; do
@@ -218,6 +242,7 @@ for key in "${!service_count[@]}"; do
 
 echo "Output saved to $output_csv_file"
 
+# Remove previous azure resource file if it exists
 if [ -f "$azure_resources_csv_file" ]; then
-    rm -f "$azure_resources_csv_file"
+  rm -f "$azure_resources_csv_file"
 fi
