@@ -62,7 +62,7 @@ No, the script(s) don’t establish any external connections, they simply query 
 **Azure**
 * Depending on how many subscriptions are being counted the script typically takes around 2-3 minutes per subscription. By default all subscriptions are included. Subscriptions can be specified using the *-s* parameter.
 
-## How to run the proviced scripts?
+## How to run the provided scripts?
 
 See below for examples on running the LM Cloud Resource Inventory scripts. For a list of all parameters you can use the *-h* flag to show all options:
 
