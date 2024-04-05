@@ -93,7 +93,7 @@ output_csv_file="azure_resource_count_output.csv"
 show_help() {
     echo "Usage: $0 [-h] [-o output_file_name] [-s subscriptions]"
     echo " -h help                Display this help message."
-    echo " -s subscriptions       Comma separated list of subscriptions to include in the resource count. If not provided, all subscriptions will be included."
+    echo " -s subscriptions       Comma separated list of subscriptions to include in the resource count(in double quotes). If not provided, all subscriptions will be included."
     echo " -o output_file_name    Output file name. If not provided, the default name will be used - azure_resource_count_output.csv."
     exit 0
 }

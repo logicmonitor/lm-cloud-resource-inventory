@@ -1,6 +1,11 @@
 #! /bin/bash
 
-regions=(us-east-1
+#############
+# VARIABLES #
+#############
+
+declare -a regions=(
+  us-east-1
   us-east-2
   us-west-1
   us-west-2
@@ -23,7 +28,7 @@ regions=(us-east-1
   me-south-1
   sa-east-1)
 
-resource_types=(
+declare -a resource_types=(
 AWS::ApiGateway::RestApi
   AWS::ApiGatewayV2::Api
   AWS::Athena::WorkGroup
@@ -56,12 +61,15 @@ AWS::ApiGateway::RestApi
   AWS::SQS::Queue
   AWS::StepFunctions::StateMachine)
 
-global_resource_types=(
+declare -a global_resource_types=(
 AWS::CloudFront::Distribution
   AWS::S3::Bucket)
 
-iaas=("ec2")
-paas=("AWS::ECS::Cluster"
+declare -a iaas=(
+  "ec2")
+
+declare -a paas=(
+  "AWS::ECS::Cluster"
   "AWS::Lambda::Function"
   "appstream"
   "cloudsearch"
@@ -73,17 +81,26 @@ paas=("AWS::ECS::Cluster"
   "AWS::RDS::DBInstance")
 
 processed=0
-# cloud control api resources
+# Cloud control api resources
 total_services=$((${#resource_types[@]} + ${#global_resource_types[@]}))
-# aws cli resources
-((total_services = total_services + 25))
-
-# write columns to output csv file
-echo "Category, Number" >aws_resource_count_output.csv
 
 iaas_count=0
 paas_count=0
 paas_non_charged_count=0
+
+output_csv_file="aws_resource_count_output.csv"
+
+#############
+# FUNCTIONS #
+#############
+
+function show_help() {
+    echo "Usage: $0 [-h] [-o output_file_name] [-r regions]"
+    echo " -h help       Display this help message."
+    echo " -r regions    Comma separated list of regions to include in the resource count(in double quotes). If not provided, all regions will be included."
+    echo " -o output     Output file name. If not provided, the default name will be used - azure_resource_count_output.csv."
+    exit 0
+}
 
 function update_count() {
   res_type=$1
@@ -99,6 +116,9 @@ function update_count() {
 }
 
 function get_resources() {
+  # Set connection timeout to 10 seconds
+  cli_connect_timeout=10
+
   resource=$1
   resource_api=$2
   resource_identifier=$3
@@ -120,8 +140,8 @@ function get_resources() {
   fi
 
   for region in "${get_regions[@]}"; do
-    aws_cli_cmd=$(aws $resource $resource_api --region $region 2>&1)
-    # success
+    aws_cli_cmd=$(aws $resource $resource_api --region $region 2>&1 --cli-connect-timeout $cli_connect_timeout)
+    # Success
     if [[ $? -eq 0 ]]; then
       next_token=$(echo "$aws_cli_cmd" | jq -r ".NextToken")
       length=$(echo "$aws_cli_cmd" | jq "$resource_identifier | length")
@@ -133,11 +153,10 @@ function get_resources() {
         count=$(echo "$paginate_aws_cli_cmd" | jq "$resource_identifier | length")
         update_count $res_type $count
       done
-    # failure
+    # Failure
     else
-      unsupported_region_aws_error="Could not connect to the endpoint URL"
-      if [[ "$aws_cli_cmd" == *"$unsupported_region_aws_error"* ]]; then
-        # if a region is not supported for a resource type, we can continue with other regions.
+      if [[ "$aws_cli_cmd" == *"Could not connect to the endpoint URL"* ]] || [[ "$aws_cli_cmd" == *"Connect timeout on endpoint URL"* ]] ; then
+        # If a region is not supported for a resource type, we can continue with other regions.
         continue
       else
         echo "AWS Error for $resource_api in $region: $aws_cli_cmd"
@@ -146,89 +165,118 @@ function get_resources() {
   done
 }
 
+#############
+#    MAIN   #
+#############
+
+# Get options from the command line
+while getopts o:r:h flag
+do
+    case "${flag}" in
+        r) IFS=',' read -r -a regions <<< "${OPTARG}";;
+        o) output_csv_file="${OPTARG}";;
+        h) show_help;;
+    esac
+done
+shift $((OPTIND-1))
+
+for region in ${regions[@]}; do
+  echo "Checking region: $region"
+done
+exit
+
+# AWS cli resources
+((total_services = total_services + 25))
+
+# Remove previous resource count file if it exists
+if [ -f "$output_csv_file" ]; then
+  echo "Removing previous output file: $output_csv_file"
+  rm -f "$output_csv_file"
+fi
+
 echo "Estimating resource counts for $total_services resource types in ${#regions[@]} regions..."
 
-# app stream fleets
+# App stream fleets
 get_resources "appstream" "describe-fleets" ".Fleets"
 ((processed = processed + 1))
 echo -e "\r$(($processed * 100 / $total_services))% done...\c"
 
-# auto scaling groups
+# Auto scaling groups
 get_resources "autoscaling" "describe-auto-scaling-groups" ".AutoScalingGroups"
 ((processed = processed + 1))
 echo -e "\r$(($processed * 100 / $total_services))% done...\c"
 
-# backup protected resources
+# Backup protected resources
 get_resources "backup" "list-protected-resources" ".Results"
 ((processed = processed + 1))
 echo -e "\r$(($processed * 100 / $total_services))% done...\c"
 
-# cloud search domain
+# Cloud search domain
 get_resources "cloudsearch" "list-domain-names" ".DomainNames"
 ((processed = processed + 1))
 echo -e "\r$(($processed * 100 / $total_services))% done...\c"
 
-# code build projects
+# Code build projects
 get_resources "codebuild" "list-projects" ".projects"
 ((processed = processed + 1))
 echo -e "\r$(($processed * 100 / $total_services))% done...\c"
 
-# cognito user pool - max results parameter is required
+# Cognito user pool - max results parameter is required
 get_resources "cognito-idp" "list-user-pools --max-results 60" ".UserPools"
 ((processed = processed + 1))
 echo -e "\r$(($processed * 100 / $total_services))% done...\c"
 
-# direct connect connections
+# Direct connect connections
 get_resources "directconnect" "describe-connections" ".connections"
 ((processed = processed + 1))
 echo -e "\r$(($processed * 100 / $total_services))% done...\c"
 
-# database migration service - replication instances
+# Database migration service - replication instances
 get_resources "dms" "describe-replication-instances" ".ReplicationInstances"
 ((processed = processed + 1))
 echo -e "\r$(($processed * 100 / $total_services))% done...\c"
 
-# database migration service - replication tasks
+# Database migration service - replication tasks
 get_resources "dms" "describe-replication-tasks" ".ReplicationTasks"
 ((processed = processed + 1))
 echo -e "\r$(($processed * 100 / $total_services))% done...\c"
 
-# ec2 instances
+# EC2 instances
 get_resources "ec2" "describe-instances" "[.Reservations[].Instances[]]"
 ((processed = processed + 1))
 echo -e "\r$(($processed * 100 / $total_services))% done...\c"
 
-# elastictranscoder pipelines
+# Elastictranscoder pipelines
 get_resources "elastictranscoder" "list-pipelines" ".Pipelines"
 ((processed = processed + 1))
 echo -e "\r$(($processed * 100 / $total_services))% done...\c"
 
-# event bridge rules
+# Event bridge rules
 get_resources "events" "list-rules" ".Rules"
 ((processed = processed + 1))
 echo -e "\r$(($processed * 100 / $total_services))% done...\c"
 
-# fsx file system
+# FSX file system
 get_resources "fsx" "describe-file-systems" ".FileSystems"
 ((processed = processed + 1))
 echo -e "\r$(($processed * 100 / $total_services))% done...\c"
 
-# glue jobs
+# Glue jobs
 get_resources "glue" "list-jobs" ".JobNames"
 ((processed = processed + 1))
 echo -e "\r$(($processed * 100 / $total_services))% done...\c"
 
-# elemental media convert queue
+# Elemental media convert queue
 get_resources "mediaconvert" "describe-endpoints" ".Endpoints"
 ((processed = processed + 1))
 echo -e "\r$(($processed * 100 / $total_services))% done...\c"
 
-# elemental mediastore container
+# Elemental mediastore container
 get_resources "mediastore" "list-containers" ".Containers"
 ((processed = processed + 1))
 echo -e "\r$(($processed * 100 / $total_services))% done...\c"
 
-# mq broker
+# MQ broker
 get_resources "mq" "list-brokers" ".BrokerSummaries"
 ((processed = processed + 1))
 echo -e "\r$(($processed * 100 / $total_services))% done...\c"
@@ -237,7 +285,7 @@ echo -e "\r$(($processed * 100 / $total_services))% done...\c"
 for region in ${regions[@]}; do
   aws_cli_cmd=$(aws kafka list-clusters-v2 --region $region 2>&1)
 
-  # success
+  # Success
   if [[ $? -eq 0 ]]; then
     next_token=$(echo "$aws_cli_cmd" | jq -r ".NextToken")
     cluster_arns=$(echo "$aws_cli_cmd" | jq -r ".ClusterInfoList | .[].ClusterArn")
@@ -256,11 +304,11 @@ for region in ${regions[@]}; do
       done
     done
 
-  # failure
+  # Failure
   else
     unsupported_region_aws_error="Could not connect to the endpoint URL"
     if [[ "$aws_cli_cmd" == *"$unsupported_region_aws_error"* ]]; then
-      # if a region is not supported for a resource type, we can continue with other regions.
+      # If a region is not supported for a resource type, we can continue with other regions.
       continue
     else
       echo "AWS Error: $aws_cli_cmd"
@@ -271,39 +319,39 @@ done
 ((processed = processed + 1))
 echo -e "\r$(($processed * 100 / $total_services))% done...\c"
 
-# neptune db instance
+# Neptune db instance
 get_resources "neptune" "describe-db-instances" ".DBInstances"
 ((processed = processed + 1))
 echo -e "\r$(($processed * 100 / $total_services))% done...\c"
 
-# ops works stack
+# Ops works stack
 get_resources "opsworks" "describe-stacks" ".Stacks"
 ((processed = processed + 1))
 echo -e "\r$(($processed * 100 / $total_services))% done...\c"
 
-# sagemaker endpoints
+# Sagemaker endpoints
 get_resources "sagemaker" "list-endpoints" ".Endpoints"
 ((processed = processed + 1))
 echo -e "\r$(($processed * 100 / $total_services))% done...\c"
 
-# transfer server
+# Transfer server
 get_resources "transfer" "list-servers" ".Servers"
 ((processed = processed + 1))
 echo -e "\r$(($processed * 100 / $total_services))% done...\c"
 
-# workspaces - directory
+# Workspaces - directory
 get_resources "workspaces" "describe-workspace-directories" ".Directories"
 ((processed = processed + 1))
 echo -e "\r$(($processed * 100 / $total_services))% done...\c"
 
-# workspaces - workspace
+# Workspaces - workspace
 get_resources "workspaces" "describe-workspaces" ".Workspaces"
 ((processed = processed + 1))
 echo -e "\r$(($processed * 100 / $total_services))% done...\c"
 
-# end of aws-cli approach
+# End of aws-cli approach
 
-# list resources for each region and resource type using cloud control api
+# List resources for each region and resource type using cloud control api
 
 for type in ${resource_types[@]}; do
   res_type="PaaS(Non-charged)"
@@ -324,7 +372,7 @@ for type in ${resource_types[@]}; do
     else
       unsupported_error='does not support LIST action'
       if [[ "$result" == *"$unsupported_error"* ]]; then
-        # if a region doesn't support LIST operation for a resource type, we can skip checking for all other regions.
+        # If a region doesn't support LIST operation for a resource type, we can skip checking for all other regions.
         break
       fi
     fi
@@ -333,7 +381,7 @@ for type in ${resource_types[@]}; do
   echo -e "\r$(($processed * 100 / $total_services))% done...\c"
 done
 
-# global resources
+# Global resources
 for type in ${global_resource_types[@]}; do
   res_type="PaaS(Non-charged)"
 
@@ -353,14 +401,9 @@ for type in ${global_resource_types[@]}; do
   echo -e "\r$(($processed * 100 / $total_services))% done...\c"
 done
 
-# EKS count
-eks_count=$(kubectl get pods -ojson | jq '.items | length')
-if [[ $eks_count -gt 0 ]]; then
-  ((paas_count = paas_count + $eks_count))
-fi
+echo "Category,Number" >> "$output_csv_file"
+echo "IaaS",$iaas_count >> "$output_csv_file"
+echo "PaaS",$paas_count >> "$output_csv_file"
+echo "Non-compute",$paas_non_charged_count >> "$output_csv_file"
 
-echo "Done! Results saved in aws_resource_count_output.csv."
-
-echo "IaaS",$iaas_count >>aws_resource_count_output.csv
-echo "PaaS",$paas_count >>aws_resource_count_output.csv
-echo "Non-compute",$paas_non_charged_count >>aws_resource_count_output.csv
+echo -e "\nDone! Results saved in $output_csv_file."

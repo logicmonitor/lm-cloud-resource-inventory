@@ -25,23 +25,29 @@ In order to minimize setup requirements, and for purposes of expediency, LogicMo
 
 For users with advanced cloud experience, the scripts can also be executed from a local workstation with the AWS or Azure CLIs installed.
 
-AWS
-* [Install or Update the latest version of AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
-* Required extensions: TBD
+#### Requirements
+
+**Note:**  Cloud provider CLIs have all required dependencies already instaled.
+
+**AWS**
+* AWS CLI - [How to install the AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
+* Bash version 5 or later
   
-Azure
-* [How to install the Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli)
-* Required extensions: resource-graph, virtual-wan
-* Required version of bash: 5.0 or later (if using azure cloud shell, this should already be on the latest verison)
+**Azure**
+* Azure CLI - [How to install the Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli)
+* Required extensions: **resource-graph**, **virtual-wan**
+  * ```az extension add --name resource-graph```
+  * ```az extension add --name virtual-wan```
+* Bash version 5 or later
 
 #### *What permissions are required by the scripts to run against my cloud environments?*
 
 The scripts will utilize the permissions of the currently logged-in cloud account, and while the scripts do not execute any write operations against a cloud account, best practice recommendation is to run the scripts with a read-only account.
 
-AWS
+**AWS**
 * Minimum required role: ReadOnly (best practice is to use an account with only ReadOnly access.)
 
-Azure
+**Azure**
 * Minimum required role: Reader (best practice is to use an account with only Reader access.)
 
 #### *Does the script make any connections, other than to AWS or Azure?*
@@ -50,22 +56,55 @@ No, the script(s) don’t establish any external connections, they simply query 
 
 #### *How long should it take to run these scripts?*
 
-AWS
-* The AWS script may take up to an hour as it needs to check per service, per region, for accessible resources.
+**AWS**
+* The AWS script may take up to an hour as it needs to check per service, per region, for accessible resources. By default all regions are included. It is recomended to use the *-r* regions parameter to limit the scope to regions you are actively utilizing to reduce the overall run time of the script.
 
-Azure
-* The Azure script may take up to ten minutes to successfully collect data.
+**Azure**
+* Depending on how many subscriptions are being counted the script typically takes around 2-3 minutes per subscription. By default all subscriptions are included. Subscriptions can be specified using the *-s* parameter.
+
+#### How to run the proviced scripts?
+
+See below for examples on running the LM Cloud Resource Inventory scripts. For a list of all parameters you can use the *-h* flag to show all options:
+
+**AWS**
+```
+#Make the script executable
+chmod 755 get_aws_resource_count.sh
+
+#Run resource count script for two regions (us-west-1 & us-west-2)
+./get_aws_resource_count.sh -r "us-west-1,us-west-2" -o aws_resource_count_output.csv
+
+#Run resource count script for all regions
+./get_aws_resource_count.sh -o aws_resource_count_output.csv
+```
+
+**Azure**
+```
+#Make the script executable
+chmod 755 get_azure_resource_count.sh
+
+#Run resource count script for two subscriptions (Pay-As-You-Go & Production)
+./get_azure_resource_count.sh -s "Pay-As-You-Go,Production" -o azure_resource_count_output.csv
+
+#Run resource count script for all subscriptions
+./get_azure_resource_count.sh -o azure_resource_count_output.csv
+```
 
 #### *What outputs do the scripts provide?*
 
-The script outputs are provided as CSV files that can be reviewed by customers, prior to sharing with LogicMonitor.
-* aws_resource_count_output.csv
-* azure_resource_count_output.csv
+The script outputs are provided as CSV files that can be reviewed by customers, prior to sharing with LogicMonitor. Unless specfied when running the resource count scripts, the default output files names are:
+```
+aws_resource_count_output.csv
+azure_resource_count_output.csv
+```
 
 Example CSV output:
-* IaaS,71
-* PaaS,15
-* Non-Compute,349
+```
+Category,Number
+IaaS,71
+PaaS,15
+Non-Compute,349
+```
 
 #### *What should we do with the outputs after we're done running these scripts?*
 
@@ -74,8 +113,6 @@ LogicMonitor recommends reviewing the output(s) of the script(s) prior to sharin
 The outputs can be downloaded from the provider's cloud shell:
 * [Download a file from AWS CloudShell](https://docs.aws.amazon.com/cloudshell/latest/userguide/getting-started.html#download-file)
 * [Download Files from the Azure Cloud Shell](https://learn.microsoft.com/en-us/azure/cloud-shell/persisting-shell-storage#download-files-in-azure-cloud-shell)
-
-If additional assistance is required, please reach out to your friendly neighborhood Account Executive or Sales Engineer.
 
 #### *Where can we get support if we have questions or concerns about running these scripts?*
 
