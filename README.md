@@ -6,8 +6,7 @@ This solution is provided by LogicMonitor in order to collect cloud resource cou
 
 ## *What data is collected by the LM Cloud Resource Inventory scripts?*
 
-LM Cloud Resource Inventory collects the names of cloud resource groups, the types of cloud services being utilized, and the associated quantity of said services/ resources.
-* The scripts collect only the “Resource Group” name of each cloud service type.
+The LM Cloud Resource Inventory script records the associated quantity of services/resources based on LM Cloud resource type (IaaS, PaaS, Non-Compute).
 * No other data associated with cloud resources is collected or recorded (for example, resource name or ID.) 
 * The output of the script is visible to customers for review, prior to sharing with LogicMonitor.
 
