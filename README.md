@@ -6,7 +6,7 @@ This solution is provided by LogicMonitor in order to collect cloud resource cou
 
 ## *What data is collected by the LM Cloud Resource Inventory scripts?*
 
-The LM Cloud Resource Inventory script records the associated quantity of services/resources based on LM Cloud resource type (IaaS, PaaS, Non-Compute).
+The LM Cloud Resource Inventory script records the associated quantity of services/resources based on LM Cloud resource type (IaaS, PaaS, Non-Compute.)
 * No other data associated with cloud resources is collected or recorded (for example, resource name or ID.) 
 * The output of the script is visible to customers for review, prior to sharing with LogicMonitor.
 
@@ -26,7 +26,7 @@ For users with advanced cloud experience, the scripts can also be executed from 
 
 ## Requirements
 
-**Note:**  Cloud provider CLIs have all required dependencies already instaled.
+**Note:**  Cloud provider CLIs have all required dependencies already installed.
 
 **AWS**
 * AWS CLI - [How to install the AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
@@ -91,7 +91,7 @@ chmod 755 get_azure_resource_count.sh
 
 ## *What outputs do the scripts provide?*
 
-The script outputs are provided as CSV files that can be reviewed by customers, prior to sharing with LogicMonitor. Unless specfied when running the resource count scripts, the default output files names are:
+The script outputs are provided as CSV files that can be reviewed by customers, prior to sharing with LogicMonitor. Unless specified when running the resource count scripts, the default output files names are:
 ```
 aws_resource_count_output.csv
 azure_resource_count_output.csv
