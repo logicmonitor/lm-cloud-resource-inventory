@@ -180,11 +180,6 @@ do
 done
 shift $((OPTIND-1))
 
-for region in ${regions[@]}; do
-  echo "Checking region: $region"
-done
-exit
-
 # AWS cli resources
 ((total_services = total_services + 25))
 
