@@ -113,6 +113,14 @@ The outputs can be downloaded from the provider's cloud shell:
 * [Download a file from AWS CloudShell](https://docs.aws.amazon.com/cloudshell/latest/userguide/getting-started.html#download-file)
 * [Download Files from the Azure Cloud Shell](https://learn.microsoft.com/en-us/azure/cloud-shell/persisting-shell-storage#download-files-in-azure-cloud-shell)
 
+## *How to calculate Kubernetes resource counts?*
+
+LogicMonitor recommends utilizing kubectl in order to get resource counts for all K8s deployments whether that be EKS,AKS or self hosted. For each cluster you manage you can run the following command to get the number of pods in the required clusters:
+
+```
+kubectl get pods --all-namespaces --no-headers -o custom-columns=Type:kind | sort | uniq -c
+```
+
 ## *Where can we get support if we have questions or concerns about running these scripts?*
 
 As these scripts are most commonly utilized in the LogicMonitor pre-sales process, reach out to your friendly neighborhood Sales Engineer or Customer Success Manager for additional support.
