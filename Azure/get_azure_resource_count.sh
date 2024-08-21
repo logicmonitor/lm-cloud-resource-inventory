@@ -79,7 +79,7 @@ declare -A service_count=(
   ["IaaS"]=0
   ["PaaS"]=0
   ["Non-compute"]=0
-  ["Non-compute"]=0
+  ["Unsupported"]=0
 )
 
 #Default values
