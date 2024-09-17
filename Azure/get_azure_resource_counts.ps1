@@ -249,10 +249,6 @@ $summarizedResources = $allResources |
 $summarizedResources | Export-Csv -Path $OutputFile -NoTypeInformation
 Write-Host "Resource summary exported to: $OutputFile"
 
-# Display results
-$summarizedResources | Format-Table -AutoSize
-
-
 # Display unsupported resource types
 $unsupportedTypes = $allResources | 
     Where-Object { $_.Category -eq "Unsupported" } | 
@@ -263,7 +259,14 @@ if ($unsupportedTypes) {
     $unsupportedTypes | ForEach-Object { Write-Host " - $($_.ResourceType)" }
 }
 
+# Display results
+$summarizedResources | Format-Table -AutoSize | Out-String | Write-Host
+
 # Return PSObject if specified
 if ($PassThru){
-    return $($allResources | Select-Object Subscription,ResourceGroup,ResourceName,Location,Category)
+    if($DetailedResults){
+        return $($allResources | Select-Object Subscription,ResourceGroup,ResourceName,Location,Category)
+    } else {
+        return $summarizedResources
+    }
 }
