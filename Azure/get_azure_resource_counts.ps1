@@ -9,6 +9,15 @@ and provides a summary count. It also identifies any unsupported resource types.
 .PARAMETER Subscriptions
 Comma-separated list of subscription names to process. If not provided, all accessible subscriptions will be processed.
 
+.PARAMETER ResourceGroups
+Comma-separated list of resource groups to process. If not provided, all resource groups in the specified subscriptions will be processed.
+
+.PARAMETER DetailedResults
+Switch to include full resource details as part of the inventory export.
+
+.PARAMETER PassThru
+Switch to pass through export results as a PSObject.
+
 .PARAMETER OutputFile
 The name of the CSV file to export the results. Default is "azure_resource_count_output.csv".
 
@@ -16,7 +25,7 @@ The name of the CSV file to export the results. Default is "azure_resource_count
 .\Count-AzureResources.ps1 -Subscriptions "Sub1,Sub2" -OutputFile "custom_output.csv"
 
 .EXAMPLE
-.\Count-AzureResources.ps1
+.\Count-AzureResources.ps1 -ResourceGroups "RG1,RG2" -DetailedResults -PassThru
 
 .NOTES
 Requires the Az PowerShell module to be installed and an active Azure connection.
