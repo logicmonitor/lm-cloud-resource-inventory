@@ -22,20 +22,20 @@ Switch to pass through export results as a PSObject.
 The name of the CSV file to export the results. Default is "azure_resource_count_output.csv".
 
 .EXAMPLE
-.\Count-AzureResources.ps1 -Subscriptions "Sub1,Sub2" -OutputFile "custom_output.csv"
+.\get_azure_resource_counts.ps1 -Subscriptions "Sub1,Sub2" -OutputFile "custom_output.csv"
 
 .EXAMPLE
-.\Count-AzureResources.ps1 -ResourceGroups "RG1,RG2" -DetailedResults -PassThru
+.\get_azure_resource_counts.ps1 -ResourceGroups "RG1,RG2" -DetailedResults -PassThru
 
 .NOTES
 Requires the Az PowerShell module to be installed and an active Azure connection.
 #>
 
 param (
-    [Parameter(HelpMessage="Comma-separated list of subscription names")]
+    [Parameter(HelpMessage="Comma-separated list of subscription names to include, by default all is included")]
     [string]$Subscriptions,
 
-    [Parameter(HelpMessage="Comma-separated list of resource groups")]
+    [Parameter(HelpMessage="Comma-separated list of resource groups to include, by default all is included")]
     [string]$ResourceGroups,
 
     [Parameter(HelpMessage="Include full resource details as part of inventory export")]
@@ -201,6 +201,7 @@ function Connect-AzureIfNeeded {
     if (-not $context) {
         Write-Host "No active Azure context found. Prompting for login..."
         try {
+            Start-Sleep -Seconds 5
             Connect-AzAccount -ErrorAction Stop | Out-Null
             Write-Host "Successfully connected to Azure."
         }
