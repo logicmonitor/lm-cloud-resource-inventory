@@ -7,7 +7,7 @@ This solution is provided by LogicMonitor in order to collect cloud resource cou
 ## *What data is collected by the LM Cloud Resource Inventory scripts?*
 
 The LM Cloud Resource Inventory script records the associated quantity of services/resources based on LM Cloud resource type (IaaS, PaaS, Non-Compute.)
-* No other data associated with cloud resources is collected or recorded (for example, resource name or ID.) 
+* By default, no other data associated with cloud resources is collected or recorded (for example, resource name or ID, unless instructed using the *-DetailedResults* parameter.) 
 * The output of the script is visible to customers for review, prior to sharing with LogicMonitor.
 
 ## *How will LogicMonitor use this data?*
@@ -22,7 +22,7 @@ The scripts provided are shell scripts that LogicMonitor recommends executing at
 
 In order to minimize setup requirements, and for purposes of expediency, LogicMonitor recommends execution of the scripts in the relevant cloud provider CLI.
 
-For users with advanced cloud experience, the scripts can also be executed from a local workstation with the AWS or Azure CLIs installed.
+For users with advanced cloud experience, the scripts can also be executed from a local workstation with the AWS or Azure pre-reqs installed.
 
 ## Requirements
 
@@ -33,11 +33,8 @@ For users with advanced cloud experience, the scripts can also be executed from 
 * Bash version 5 or later
   
 **Azure**
-* Azure CLI - [How to install the Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli)
-* Required extensions: **resource-graph**, **virtual-wan**
-  * ```az extension add --name resource-graph```
-  * ```az extension add --name virtual-wan```
-* Bash version 5 or later
+* PowerShell Az module - [How to install the PowerShell Az module](https://learn.microsoft.com/en-us/powershell/azure/install-azps-windows?view=azps-12.3.0&tabs=powershell&pivots=windows-psgallery)
+* PowerShell version 5.1 or later
 
 ## *What permissions are required by the scripts to run against my cloud environments?*
 
@@ -59,7 +56,7 @@ No, the script(s) don’t establish any external connections, they simply query 
 * The AWS script may take up to an hour as it needs to check per service, per region, for accessible resources. By default all regions are included. It is recomended to use the *-r* regions parameter to limit the scope to regions you are actively utilizing to reduce the overall run time of the script.
 
 **Azure**
-* Depending on how many subscriptions are being counted the script typically takes around 2-3 minutes per subscription. By default all subscriptions are included. Subscriptions can be specified using the *-s* parameter.
+* Depending on how many subscriptions are being counted the script typically takes around 2-3 minutes per subscription. By default all subscriptions and resource groups are included. Subscriptions can be specified using the *-Subscriptions* parameter as a comma separated list of subscriptions. Resource Groups can be specified using the *-ResourceGroups* parameter as a comma separated list of resource groups.
 
 ## How to run the provided scripts?
 
@@ -79,14 +76,20 @@ chmod 755 get_aws_resource_count.sh
 
 **Azure**
 ```
-#Make the script executable
-chmod 755 get_azure_resource_count.sh
+#Start a PowerShell session
+pwsh
 
 #Run resource count script for two subscriptions (Pay-As-You-Go & Production)
-./get_azure_resource_count.sh -s "Pay-As-You-Go,Production" -o azure_resource_count_output.csv
+.\get_azure_resource_counts.ps1 -Subscriptions "Pay-As-You-Go,Production" -OutputFile "custom_output.csv"
+
+#Run resource count script for two resource groups (RG1 & RG2) and pass thru the results
+$results = .\get_azure_resource_counts.ps1 -ResourceGroups "RG1,RG2" -PassThru
 
 #Run resource count script for all subscriptions
 ./get_azure_resource_count.sh -o azure_resource_count_output.csv
+
+#Run resource count script for all subscriptions and include a detailed inventory file with the results
+$results = .\get_azure_resource_counts.ps1 -DetailedResults -PassThru
 ```
 
 ## *What outputs do the scripts provide?*
@@ -103,6 +106,14 @@ Category,Number
 IaaS,71
 PaaS,15
 Non-Compute,349
+```
+
+Example details CSV output:
+```
+"Subscription","ResourceGroup","ResourceName","Location","Category"
+"MySub","RG1","cs21003200186d3f527","eastus","Non-compute"
+"MySub","RG2","lmdb1/master","westus","PaaS"
+rest of inventory....
 ```
 
 ## *What should we do with the outputs after we're done running these scripts?*
