@@ -185,13 +185,12 @@ try {
             $group = $_.Group
             [PSCustomObject]@{
                 ResourceType = $_.Name
-                IaaS = ($group | Where-Object { $_.Category -eq 'IaaS' } | Measure-Object).Count
-                PaaS = ($group | Where-Object { $_.Category -eq 'PaaS' } | Measure-Object).Count
-                NonCompute = ($group | Where-Object { $_.Category -eq 'Non-Compute' } | Measure-Object).Count
+                Type = $group[0].Category
+                Count = ($group | Measure-Object).Count
             }
         }
 
-        $detailedOutputFile = [System.IO.Path]::ChangeExtension($OutputFile, "_detailed.csv")
+        $detailedOutputFile = [System.IO.Path]::GetFileNameWithoutExtension($OutputFile) + "_detailed.csv"
         $groupedResourceData | Export-Csv -Path $detailedOutputFile -NoTypeInformation
         Write-Host "Detailed resource summary exported to: $detailedOutputFile"
     }
