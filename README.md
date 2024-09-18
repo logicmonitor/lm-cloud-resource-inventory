@@ -118,10 +118,11 @@ rest of inventory....
 
 Example details AWS CSV output:
 ```
-"ResourceType","IaaS","PaaS","NonCompute"
-"AWS::Athena::WorkGroup","0","0","3"
-"AWS::Backup::BackupVault","0","0","1"
-"AWS::Bedrock::FoundationModels","0","142","0"
+"ResourceType","Type","Count"
+"AWS::Athena::WorkGroup","Non-Compute","1"
+"AWS::Backup::BackupVault","Non-Compute","1"
+"AWS::Bedrock::FoundationModels","PaaS","68"
+"AWS::DynamoDB::Table","Non-Compute","1"
 rest of inventory....
 ```
 
