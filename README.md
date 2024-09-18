@@ -16,7 +16,7 @@ The data collected will be used to accurately scope the quantity of LogicMonitor
 
 ## *What language are these scripts written in?*
 
-The scripts provided are shell scripts that LogicMonitor recommends executing at the cloud provider CLI.
+The scripts provided are PowerShell scripts that LogicMonitor recommends executing at the cloud provider CLI.
 
 ## *Where should I execute these scripts in order to successfully collect data?*
 
@@ -29,8 +29,8 @@ For users with advanced cloud experience, the scripts can also be executed from 
 **Note:**  Cloud provider CLIs have all required dependencies already installed.
 
 **AWS**
-* AWS CLI - [How to install the AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
-* Bash version 5 or later
+* PowerShell AWS.Tools module - [How to install the AWS.Tools PowerShell module](https://docs.aws.amazon.com/powershell/latest/userguide/pstools-getting-set-up.html)
+* PowerShell version 5.1 or later
   
 **Azure**
 * PowerShell Az module - [How to install the PowerShell Az module](https://learn.microsoft.com/en-us/powershell/azure/install-azps-windows?view=azps-12.3.0&tabs=powershell&pivots=windows-psgallery)
@@ -53,7 +53,7 @@ No, the script(s) don’t establish any external connections, they simply query 
 ## *How long should it take to run these scripts?*
 
 **AWS**
-* The AWS script may take up to an hour as it needs to check per service, per region, for accessible resources. By default all regions are included. It is recomended to use the *-r* regions parameter to limit the scope to regions you are actively utilizing to reduce the overall run time of the script.
+* The AWS script may take up to an hour as it needs to check per service, per region, for accessible resources. By default all regions are included. It is recommended to use the *-Regions* regions parameter to limit the scope to regions you are actively utilizing to reduce the overall run time of the script.
 
 **Azure**
 * Depending on how many subscriptions are being counted the script typically takes around 2-3 minutes per subscription. By default all subscriptions and resource groups are included. Subscriptions can be specified using the *-Subscriptions* parameter as a comma separated list of subscriptions. Resource Groups can be specified using the *-ResourceGroups* parameter as a comma separated list of resource groups.
@@ -65,13 +65,16 @@ See below for examples on running the LM Cloud Resource Inventory scripts. For a
 **AWS**
 ```
 #Make the script executable
-chmod 755 get_aws_resource_count.sh
+pwsh
 
-#Run resource count script for two regions (us-west-1 & us-west-2)
-./get_aws_resource_count.sh -r "us-west-1,us-west-2" -o aws_resource_count_output.csv
+#Run resource count script for two regions (us-east-1, us-east-2)
+.\get_aws_resource_counts.ps1 -Regions "us-east-1,us-east-2"
 
-#Run resource count script for all regions
-./get_aws_resource_count.sh -o aws_resource_count_output.csv
+#Run resource count script for all regions with a output file named aws_resource_count_output.csv
+.\get_aws_resource_counts.ps1 -OutputFile aws_resource_count_output.csv
+
+#Run resource count script for all regions and include a detailed inventory file with the results
+$results = .\get_aws_resource_counts.ps1 -DetailedResults -PassThru
 ```
 
 **Azure**
@@ -82,11 +85,8 @@ pwsh
 #Run resource count script for two subscriptions (Pay-As-You-Go & Production)
 .\get_azure_resource_counts.ps1 -Subscriptions "Pay-As-You-Go,Production" -OutputFile "custom_output.csv"
 
-#Run resource count script for two resource groups (RG1 & RG2) and pass thru the results
-$results = .\get_azure_resource_counts.ps1 -ResourceGroups "RG1,RG2" -PassThru
-
-#Run resource count script for all subscriptions
-./get_azure_resource_count.sh -o azure_resource_count_output.csv
+#Run resource count script for all subscriptions with a output file named azure_resource_count_output.csv
+.\get_azure_resource_counts.ps1 -OutputFile azure_resource_count_output.csv
 
 #Run resource count script for all subscriptions and include a detailed inventory file with the results
 $results = .\get_azure_resource_counts.ps1 -DetailedResults -PassThru
@@ -96,8 +96,8 @@ $results = .\get_azure_resource_counts.ps1 -DetailedResults -PassThru
 
 The script outputs are provided as CSV files that can be reviewed by customers, prior to sharing with LogicMonitor. Unless specified when running the resource count scripts, the default output files names are:
 ```
-aws_resource_count_output.csv
-azure_resource_count_output.csv
+aws_resource_count_output(_detailed).csv
+azure_resource_count_output(_detailed).csv
 ```
 
 Example CSV output:
@@ -108,11 +108,20 @@ PaaS,15
 Non-Compute,349
 ```
 
-Example details CSV output:
+Example details Azure CSV output:
 ```
 "Subscription","ResourceGroup","ResourceName","Location","Category"
 "MySub","RG1","cs21003200186d3f527","eastus","Non-compute"
 "MySub","RG2","lmdb1/master","westus","PaaS"
+rest of inventory....
+```
+
+Example details AWS CSV output:
+```
+"ResourceType","IaaS","PaaS","NonCompute"
+"AWS::Athena::WorkGroup","0","0","3"
+"AWS::Backup::BackupVault","0","0","1"
+"AWS::Bedrock::FoundationModels","0","142","0"
 rest of inventory....
 ```
 
