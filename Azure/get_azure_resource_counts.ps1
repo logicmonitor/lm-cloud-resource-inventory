@@ -1,10 +1,15 @@
 <#
 .SYNOPSIS
-Counts Azure resources across specified subscriptions and categorizes them.
-
+This solution is provided by LogicMonitor in order to collect cloud resource counts within an Azure environment, for LogicMonitor licensing.
 .DESCRIPTION
-This script enumerates Azure resources across one or more subscriptions, categorizes them as IaaS, PaaS, or Non-compute,
-and provides a summary count. It also identifies any unsupported resource types.
+This script performs the following tasks:
+1. Enumerates Azure resources across specified subscriptions
+2. Categorizes each resource as IaaS, PaaS, or Non-compute
+3. Provides a summary count of resources in each category
+4. Identifies any unsupported resource types
+
+It offers flexibility in scope, allowing users to focus on specific subscriptions or 
+resource groups, and delivers a comprehensive overview of cloud resource distribution.
 
 .PARAMETER Subscriptions
 Comma-separated list of subscription names to process. If not provided, all accessible subscriptions will be processed.
@@ -56,79 +61,79 @@ function Get-ResourceCategory {
         [string]$resourceType
     )
 
-$resourceTypes = @{
-    "microsoft.analysisservices/servers" = "PaaS"
-    "microsoft.apimanagement/service" = "Non-Compute"
-    "microsoft.automation/automationaccounts" = "Non-Compute"
-    "microsoft.batch/batchaccounts" = "Non-Compute"
-    "microsoft.botservice/botservices" = "PaaS"
-    "microsoft.cache/redis" = "PaaS"
-    "microsoft.cache/redisenterprise" = "PaaS"
-    "microsoft.cdn/profiles" = "Non-Compute"
-    "microsoft.cognitiveservices/accounts" = "Non-Compute"
-    "microsoft.compute/disks" = "Non-Compute"
-    "microsoft.compute/virtualmachines" = "IaaS"
-    "microsoft.compute/virtualmachinescalesets" = "Non-Compute"
-    "microsoft.compute/virtualmachinescalesets/virtualmachines" = "IaaS"
-    "microsoft.containerregistry/registries" = "Non-Compute"
-    "microsoft.datafactory/factories" = "PaaS"
-    "microsoft.datalakeanalytics/accounts" = "Non-Compute"
-    "microsoft.datalakestore/accounts" = "Non-Compute"
-    "microsoft.dbformariadb/servers" = "PaaS"
-    "microsoft.dbformysql/flexibleservers" = "PaaS"
-    "microsoft.dbformysql/servers" = "PaaS"
-    "microsoft.dbforpostgresql/flexibleservers" = "PaaS"
-    "microsoft.dbforpostgresql/servergroupsv2" = "PaaS"
-    "microsoft.dbforpostgresql/servers" = "PaaS"
-    "microsoft.desktopvirtualization/hostpools" = "PaaS"
-    "microsoft.devices/iothubs" = "Non-Compute"
-    "microsoft.documentdb/databaseaccounts" = "Non-Compute"
-    "microsoft.eventgrid/topics" = "Non-Compute"
-    "microsoft.eventhub/namespaces" = "Non-Compute"
-    "microsoft.hdinsight/clusters" = "PaaS"
-    "microsoft.insights/components" = "Non-Compute"
-    "microsoft.keyvault/vaults" = "Non-Compute"
-    "microsoft.logic/workflows" = "Non-Compute"
-    "microsoft.machinelearningservices/workspaces" = "Non-Compute"
-    "microsoft.netapp/netappaccounts" = "Non-Compute"
-    "microsoft.network/applicationgateways" = "Non-Compute"
-    "microsoft.network/azurefirewalls" = "Non-Compute"
-    "microsoft.network/expressroutecircuits" = "Non-Compute"
-    "microsoft.network/frontdoors" = "Non-Compute"
-    "microsoft.network/loadbalancers" = "Non-Compute"
-    "microsoft.network/natgateways" = "Non-Compute"
-    "microsoft.network/networkinterfaces" = "Non-Compute"
-    "microsoft.network/publicipaddresses" = "Non-Compute"
-    "microsoft.network/trafficmanagerprofiles" = "Non-Compute"
-    "microsoft.network/virtualhubs" = "Non-Compute"
-    "microsoft.network/virtualnetworkgateways" = "Non-Compute"
-    "microsoft.network/virtualnetworks" = "Non-Compute"
-    "microsoft.network/vpngateways" = "Non-Compute"
-    "microsoft.notificationhubs/namespaces/notificationhubs" = "Non-Compute"
-    "microsoft.operationalinsights/workspaces" = "Non-Compute"
-    "microsoft.powerbidedicated/capacities" = "PaaS"
-    "microsoft.recoveryservices/vaults" = "Non-Compute"
-    "microsoft.recoveryservices/vaults/backupfabrics/protectioncontainers/protecteditems" = "Non-Compute"
-    "microsoft.recoveryservices/vaults/replicationfabrics/replicationprotectioncontainers/replicationprotecteditems" = "Non-Compute"
-    "microsoft.relay/namespaces" = "Non-Compute"
-    "microsoft.search/searchservices" = "Non-Compute"
-    "microsoft.servicebus/namespaces" = "Non-Compute"
-    "microsoft.servicefabricmesh/applications" = "Non-Compute"
-    "microsoft.signalrservice/signalr" = "Non-Compute"
-    "microsoft.sql/managedinstances" = "PaaS"
-    "microsoft.sql/servers/databases" = "PaaS"
-    "microsoft.sql/servers/elasticpools" = "PaaS"
-    "microsoft.storage/storageaccounts" = "Non-Compute"
-    "microsoft.storage/storageaccounts/file" = "Non-compute"
-    "microsoft.storage/storageaccounts/blob" = "Non-compute"
-    "microsoft.storage/storageaccounts/table" = "Non-compute"
-    "microsoft.storage/storageaccounts/queue" = "Non-compute"
-    "microsoft.streamanalytics/streamingjobs" = "Non-Compute"
-    "microsoft.synapse/workspaces" = "Non-Compute"
-    "microsoft.web/hostingenvironments" = "PaaS"
-    "microsoft.web/serverfarms" = "PaaS"
-    "microsoft.web/sites" = "PaaS"
-}
+    $resourceTypes = @{
+        "microsoft.analysisservices/servers" = "PaaS"
+        "microsoft.apimanagement/service" = "Non-Compute"
+        "microsoft.automation/automationaccounts" = "Non-Compute"
+        "microsoft.batch/batchaccounts" = "Non-Compute"
+        "microsoft.botservice/botservices" = "PaaS"
+        "microsoft.cache/redis" = "PaaS"
+        "microsoft.cache/redisenterprise" = "PaaS"
+        "microsoft.cdn/profiles" = "Non-Compute"
+        "microsoft.cognitiveservices/accounts" = "Non-Compute"
+        "microsoft.compute/disks" = "Non-Compute"
+        "microsoft.compute/virtualmachines" = "IaaS"
+        "microsoft.compute/virtualmachinescalesets" = "Non-Compute"
+        "microsoft.compute/virtualmachinescalesets/virtualmachines" = "IaaS"
+        "microsoft.containerregistry/registries" = "Non-Compute"
+        "microsoft.datafactory/factories" = "PaaS"
+        "microsoft.datalakeanalytics/accounts" = "Non-Compute"
+        "microsoft.datalakestore/accounts" = "Non-Compute"
+        "microsoft.dbformariadb/servers" = "PaaS"
+        "microsoft.dbformysql/flexibleservers" = "PaaS"
+        "microsoft.dbformysql/servers" = "PaaS"
+        "microsoft.dbforpostgresql/flexibleservers" = "PaaS"
+        "microsoft.dbforpostgresql/servergroupsv2" = "PaaS"
+        "microsoft.dbforpostgresql/servers" = "PaaS"
+        "microsoft.desktopvirtualization/hostpools" = "PaaS"
+        "microsoft.devices/iothubs" = "Non-Compute"
+        "microsoft.documentdb/databaseaccounts" = "Non-Compute"
+        "microsoft.eventgrid/topics" = "Non-Compute"
+        "microsoft.eventhub/namespaces" = "Non-Compute"
+        "microsoft.hdinsight/clusters" = "PaaS"
+        "microsoft.insights/components" = "Non-Compute"
+        "microsoft.keyvault/vaults" = "Non-Compute"
+        "microsoft.logic/workflows" = "Non-Compute"
+        "microsoft.machinelearningservices/workspaces" = "Non-Compute"
+        "microsoft.netapp/netappaccounts" = "Non-Compute"
+        "microsoft.network/applicationgateways" = "Non-Compute"
+        "microsoft.network/azurefirewalls" = "Non-Compute"
+        "microsoft.network/expressroutecircuits" = "Non-Compute"
+        "microsoft.network/frontdoors" = "Non-Compute"
+        "microsoft.network/loadbalancers" = "Non-Compute"
+        "microsoft.network/natgateways" = "Non-Compute"
+        "microsoft.network/networkinterfaces" = "Non-Compute"
+        "microsoft.network/publicipaddresses" = "Non-Compute"
+        "microsoft.network/trafficmanagerprofiles" = "Non-Compute"
+        "microsoft.network/virtualhubs" = "Non-Compute"
+        "microsoft.network/virtualnetworkgateways" = "Non-Compute"
+        "microsoft.network/virtualnetworks" = "Non-Compute"
+        "microsoft.network/vpngateways" = "Non-Compute"
+        "microsoft.notificationhubs/namespaces/notificationhubs" = "Non-Compute"
+        "microsoft.operationalinsights/workspaces" = "Non-Compute"
+        "microsoft.powerbidedicated/capacities" = "PaaS"
+        "microsoft.recoveryservices/vaults" = "Non-Compute"
+        "microsoft.recoveryservices/vaults/backupfabrics/protectioncontainers/protecteditems" = "Non-Compute"
+        "microsoft.recoveryservices/vaults/replicationfabrics/replicationprotectioncontainers/replicationprotecteditems" = "Non-Compute"
+        "microsoft.relay/namespaces" = "Non-Compute"
+        "microsoft.search/searchservices" = "Non-Compute"
+        "microsoft.servicebus/namespaces" = "Non-Compute"
+        "microsoft.servicefabricmesh/applications" = "Non-Compute"
+        "microsoft.signalrservice/signalr" = "Non-Compute"
+        "microsoft.sql/managedinstances" = "PaaS"
+        "microsoft.sql/servers/databases" = "PaaS"
+        "microsoft.sql/servers/elasticpools" = "PaaS"
+        "microsoft.storage/storageaccounts" = "Non-Compute"
+        "microsoft.storage/storageaccounts/file" = "Non-compute"
+        "microsoft.storage/storageaccounts/blob" = "Non-compute"
+        "microsoft.storage/storageaccounts/table" = "Non-compute"
+        "microsoft.storage/storageaccounts/queue" = "Non-compute"
+        "microsoft.streamanalytics/streamingjobs" = "Non-Compute"
+        "microsoft.synapse/workspaces" = "Non-Compute"
+        "microsoft.web/hostingenvironments" = "PaaS"
+        "microsoft.web/serverfarms" = "PaaS"
+        "microsoft.web/sites" = "PaaS"
+    }
 
     $resourceType = $resourceType.ToLower()
     if ($resourceTypes.ContainsKey($resourceType)) {
@@ -233,10 +238,10 @@ Write-Host "Checking $(($subscriptionList | Measure-Object).Count) subscriptions
 $allResources = Get-AzureResources -Subscriptions $subscriptionList
 
 # Group and summarize resources
-if ($DetailedResults){
+if ($DetailedResults) {
     # Export results to CSV
     $DetailOutputFile = [System.IO.Path]::GetFileNameWithoutExtension($OutputFile).ToString() + "_detailed.csv"
-    $allResources | Select-Object Subscription,ResourceGroup,ResourceName,Location,ResourceType,Category | Export-Csv -Path $DetailOutputFile -NoTypeInformation
+    $allResources | Select-Object Subscription, ResourceGroup, ResourceName, Location, ResourceType, Category | Export-Csv -Path $DetailOutputFile -NoTypeInformation
 
     Write-Host "Resource detailed inventory exported to: $DetailOutputFile"
 } 
@@ -251,7 +256,7 @@ $summarizedResources | Export-Csv -Path $OutputFile -NoTypeInformation
 Write-Host "Resource summary exported to: $OutputFile"
 
 # Display unsupported resource types
-If($ShowUnsupportedResources){
+if ($ShowUnsupportedResources) {
     $unsupportedTypes = $allResources | 
         Where-Object { $_.Category -eq "Unsupported" } | 
         Select-Object ResourceType -Unique
@@ -262,14 +267,13 @@ If($ShowUnsupportedResources){
     }
 }
 
-
 # Display results
 $summarizedResources | Format-Table -AutoSize | Out-String | Write-Host
 
 # Return PSObject if specified
-if ($PassThru){
-    if($DetailedResults){
-        return $($allResources | Select-Object Subscription,ResourceGroup,ResourceName,Location,Category)
+if ($PassThru) {
+    if ($DetailedResults) {
+        return $($allResources | Select-Object Subscription, ResourceGroup, ResourceName, Location, Category)
     } else {
         return $summarizedResources
     }

@@ -42,6 +42,10 @@ The scripts will utilize the permissions of the currently logged-in cloud accoun
 
 **AWS**
 * Minimum required role: ReadOnly (best practice is to use an account with only ReadOnly access.)
+* For AWS Organizations:
+  - The role specified in the -AssumeRole parameter must exist in all member accounts and have ReadOnly permissions.
+  - The account running the script must have permission to assume this role in the member accounts.
+  - Recommended to use a dedicated role like "OrganizationAccountAccessRole" with ReadOnly permissions for inventory purposes.
 
 **Azure**
 * Minimum required role: Reader (best practice is to use an account with only Reader access.)
@@ -53,7 +57,15 @@ No, the script(s) don’t establish any external connections, they simply query 
 ## *How long should it take to run these scripts?*
 
 **AWS**
-* The AWS script may take up to an hour as it needs to check per service, per region, for accessible resources. By default all regions are included. It is recommended to use the *-Regions* regions parameter to limit the scope to regions you are actively utilizing to reduce the overall run time of the script.
+* The AWS script execution time can vary significantly:
+  - It may take up to an hour to complete, as it checks each service in every region for accessible resources.
+  - By default, the script includes all AWS regions in its scan.
+  - To reduce the overall runtime, it's recommended to use the *-Regions* parameter. This allows you to limit the scope to only the regions you actively use.
+* For AWS Organizations users:
+  - The script can inventory resources across multiple accounts within an Organizational Unit (OU).
+  - Use the *-OrganizationalUnitId* parameter to specify the OU you want to inventory.
+  - The *-AssumeRole* parameter allows the script to access member accounts securely.
+  - This feature enables a comprehensive inventory across your entire AWS organization structure.
 
 **Azure**
 * Depending on how many subscriptions are being counted the script typically takes around 2-3 minutes per subscription. By default all subscriptions and resource groups are included. Subscriptions can be specified using the *-Subscriptions* parameter as a comma separated list of subscriptions. Resource Groups can be specified using the *-ResourceGroups* parameter as a comma separated list of resource groups.
@@ -75,6 +87,17 @@ pwsh
 
 #Run resource count script for all regions and include a detailed inventory file with the results
 $results = .\get_aws_resource_counts.ps1 -DetailedResults -PassThru
+
+#Run resource count script for an Organizational Unit (OU) with ID "ou-1234-5678abcd" and assume role "OrganizationAccountAccessRole" in member accounts
+.\get_aws_ou_resource_counts.ps1 -OrganizationalUnitId "ou-1234-5678abcd" -AssumeRole "OrganizationAccountAccessRole" -OutputFile "ou_resource_counts.csv"
+
+#Run resource count script for an OU with ID "ou-9876-dcba4321", assume role "CustomInventoryRole", include detailed results, and limit to specific regions
+.\get_aws_ou_resource_counts.ps1 -OrganizationalUnitId "ou-9876-dcba4321" -AssumeRole "CustomInventoryRole" -DetailedResults -Regions "us-east-1,us-west-2"
+
+#Run resource count script for an OU with ID "ou-abcd-1234efgh", assume role "ResourceInventoryRole", pass through results, and use a custom global region
+$results = .\get_aws_ou_resource_counts.ps1 -OrganizationalUnitId "ou-abcd-1234efgh" -AssumeRole "ResourceInventoryRole" -PassThru -GlobalRegion "us-west-2"
+
+
 ```
 
 **Azure**
@@ -131,8 +154,8 @@ rest of inventory....
 LogicMonitor recommends reviewing the output(s) of the script(s) prior to sharing with LogicMonitor, so as to ensure comfort with the information being provided.
 
 The outputs can be downloaded from the provider's cloud shell:
-* [Download a file from AWS CloudShell](https://docs.aws.amazon.com/cloudshell/latest/userguide/getting-started.html#download-file)
-* [Download Files from the Azure Cloud Shell](https://learn.microsoft.com/en-us/azure/cloud-shell/persisting-shell-storage#download-files-in-azure-cloud-shell)
+* [Download files from AWS CloudShell](https://docs.aws.amazon.com/cloudshell/latest/userguide/getting-started.html#download-file)
+* [Download files from the Azure Cloud Shell](https://learn.microsoft.com/en-us/azure/cloud-shell/persisting-shell-storage#download-files-in-azure-cloud-shell)
 
 ## *How to calculate Kubernetes resource counts?*
 

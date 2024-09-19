@@ -1,3 +1,55 @@
+<#
+.SYNOPSIS
+This solution is provided by LogicMonitor in order to collect cloud resource counts within an AWS environment, for LogicMonitor licensing.
+.DESCRIPTION
+This script performs the following tasks:
+1. Enumerates AWS resources across specified regions and/or accounts
+2. Categorizes each resource as IaaS, PaaS, or Non-compute
+3. Provides a summary count of resources in each category
+
+It offers flexibility in scope, allowing users to focus on specific regions or 
+accounts within an AWS Organization, and delivers a comprehensive overview of 
+cloud resource distribution.
+
+.PARAMETER Regions
+Comma-separated list of AWS regions to process. If not provided, all regions will be processed.
+
+.PARAMETER DetailedResults
+Switch to include additional resource details as part of the detailed export.
+
+.PARAMETER PassThru
+Switch to return the results as a PowerShell object as well as writing to a file. This allows for further processing of the data within PowerShell.
+
+.PARAMETER GlobalRegion
+The AWS region used to query global resources like S3 buckets and CloudFront distributions. These resources are not tied to a specific region. By default us-east-1 is utilized.
+
+.PARAMETER OrganizationalUnitId
+The AWS Organizations Organizational Unit (OU) ID to process. This parameter is used to retrieve all accounts within the specified OU and its sub-OUs.
+
+.PARAMETER AssumeRole
+The IAM role name to assume in member accounts when processing resources across an organizational unit. This role should have the necessary permissions to enumerate resources in the member accounts.
+
+.PARAMETER OutputFile
+The name of the CSV file to export the results. Default is "aws_resource_count_output.csv".
+
+.EXAMPLE
+.\get_aws_resource_counts.ps1 -Regions "us-east-1,us-west-2" -OutputFile "custom_output.csv"
+
+.EXAMPLE
+.\get_aws_resource_counts.ps1 -DetailedResults -PassThru
+
+.EXAMPLE
+.\get_aws_resource_counts.ps1 -OrganizationalUnitId "ou-1234-5678abcd" -AssumeRole "OrganizationAccountAccessRole" -OutputFile "ou_resource_counts.csv"
+
+.EXAMPLE
+.\get_aws_resource_counts.ps1 -OrganizationalUnitId "ou-9876-dcba4321" -AssumeRole "CustomInventoryRole" -DetailedResults -Regions "us-east-1,us-west-2"
+
+.EXAMPLE
+$results = .\get_aws_ou_resource_counts.ps1 -OrganizationalUnitId "ou-abcd-1234efgh" -AssumeRole "ResourceInventoryRole" -PassThru -GlobalRegion "us-west-2"
+
+.NOTES
+Requires the AWS.Tools PowerShell modules to be installed and an active AWS connection.
+#>
 [CmdletBinding(DefaultParameterSetName='Default')]
 param (
     [Parameter(HelpMessage="Comma-separated list of AWS regions", ParameterSetName = 'Default')]
