@@ -273,8 +273,8 @@ try {
         $groupedResourceData = $allResources | Group-Object -Property ResourceType, AccountId | ForEach-Object {
             $group = $_.Group
             [PSCustomObject]@{
-                ResourceType = $group[0].ResourceType
                 AccountId = $group[0].AccountId
+                ResourceType = $group[0].ResourceType
                 Type = $group[0].Category
                 Count = ($group | Measure-Object).Count
             }

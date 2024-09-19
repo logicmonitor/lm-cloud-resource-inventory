@@ -1,0 +1,13 @@
+ResourceType,AccountId,Type,Count
+AWS::Athena::WorkGroup,1.1598E+11,Non-Compute,2
+AWS::Athena::WorkGroup,5.33267E+11,Non-Compute,2
+AWS::Bedrock::FoundationModels,1.1598E+11,PaaS,137
+AWS::Bedrock::FoundationModels,5.33267E+11,PaaS,137
+AWS::Glue::Job,1.1598E+11,PaaS,1
+AWS::Kinesis::Stream,1.1598E+11,Non-Compute,2
+AWS::Kinesis::Stream,5.33267E+11,Non-Compute,2
+AWS::KinesisFirehose::DeliveryStream,1.1598E+11,Non-Compute,2
+AWS::KinesisFirehose::DeliveryStream,5.33267E+11,Non-Compute,2
+AWS::S3::Bucket,1.1598E+11,Non-Compute,2
+AWS::SES::ConfigurationSet,1.1598E+11,Non-Compute,1
+AWS::SNS::Topic,1.1598E+11,Non-Compute,2

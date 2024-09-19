@@ -154,16 +154,23 @@ function Get-AzureResources {
         Write-Host "Processing subscription: $subscription"
         Set-AzContext -Subscription $subscription | Out-Null
 
-        $resources = Get-AzResource
-        $vmssInstances = Get-AzVmssVM -ErrorAction SilentlyContinue
+        $subscriptionResources = @()
+        $vmssInstances = @()
 
-        # Check if $ResourceGroups is provided as a parameter
         if ($ResourceGroups) {
-            $ResourceGroupList = $ResourceGroups -split ',' | ForEach-Object { $_.Trim() }
-            $subscriptionResources = $resources | Where-Object { $ResourceGroupList -contains $_.ResourceGroupName }
+            $resourceGroupList = $ResourceGroups -split ',' | ForEach-Object { $_.Trim() }
+            foreach ($rg in $resourceGroupList) {
+                Write-Host "Processing resource group: $rg"
+                $subscriptionResources += Get-AzResource -ResourceGroupName $rg
+                $vmssInstances += Get-AzVmssVM -ResourceGroupName $rg -ErrorAction SilentlyContinue
+            }
         } else {
-            # If not provided, include all resource groups
-            $subscriptionResources = $resources
+            $resourceGroups = (Get-AzResourceGroup | Measure-Object).Count
+            Write-Host "Processing all $resourceGroups resource groups in subscription: $subscription"
+
+            $subscriptionResources = Get-AzResource
+            $vmssInstances = Get-AzVmssVM -ErrorAction SilentlyContinue
+
         }
 
         $subscriptionResources = $subscriptionResources | ForEach-Object {
@@ -240,10 +247,23 @@ $allResources = Get-AzureResources -Subscriptions $subscriptionList
 # Group and summarize resources
 if ($DetailedResults) {
     # Export results to CSV
-    $DetailOutputFile = [System.IO.Path]::GetFileNameWithoutExtension($OutputFile).ToString() + "_detailed.csv"
-    $allResources | Select-Object Subscription, ResourceGroup, ResourceName, Location, ResourceType, Category | Export-Csv -Path $DetailOutputFile -NoTypeInformation
+    $detailOutputFile = [System.IO.Path]::GetFileNameWithoutExtension($OutputFile).ToString() + "_detailed.csv"
+    
+    $detailedResources = $allResources | 
+        Where-Object { $_.Category -ne "Unsupported" } |
+        Group-Object Subscription, ResourceGroup, ResourceType, Category | 
+        ForEach-Object {
+            [PSCustomObject]@{
+                Subscription = $_.Group[0].Subscription
+                ResourceGroup = $_.Group[0].ResourceGroup
+                ResourceType = $_.Group[0].ResourceType
+                Category = $_.Group[0].Category
+                Count = $_.Count
+            }
+        }
+    $detailedResources | Export-Csv -Path $detailOutputFile -NoTypeInformation
 
-    Write-Host "Resource detailed inventory exported to: $DetailOutputFile"
+    Write-Host "Resource detailed inventory exported to: $detailOutputFile"
 } 
 
 $summarizedResources = $allResources | 
@@ -273,7 +293,7 @@ $summarizedResources | Format-Table -AutoSize | Out-String | Write-Host
 # Return PSObject if specified
 if ($PassThru) {
     if ($DetailedResults) {
-        return $($allResources | Select-Object Subscription, ResourceGroup, ResourceName, Location, Category)
+        return $detailedResources
     } else {
         return $summarizedResources
     }
