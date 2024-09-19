@@ -236,7 +236,7 @@ $allResources = Get-AzureResources -Subscriptions $subscriptionList
 if ($DetailedResults){
     # Export results to CSV
     $DetailOutputFile = [System.IO.Path]::GetFileNameWithoutExtension($OutputFile).ToString() + "_detailed.csv"
-    $allResources | Select-Object Subscription,ResourceGroup,ResourceName,Location,Category | Export-Csv -Path $DetailOutputFile -NoTypeInformation
+    $allResources | Select-Object Subscription,ResourceGroup,ResourceName,Location,ResourceType,Category | Export-Csv -Path $DetailOutputFile -NoTypeInformation
 
     Write-Host "Resource detailed inventory exported to: $DetailOutputFile"
 } 
