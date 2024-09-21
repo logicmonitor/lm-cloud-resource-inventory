@@ -1,6 +1,7 @@
 <#
 .SYNOPSIS
 This solution is provided by LogicMonitor in order to collect cloud resource counts within an Azure environment, for LogicMonitor licensing.
+
 .DESCRIPTION
 This script performs the following tasks:
 1. Enumerates Azure resources across specified subscriptions

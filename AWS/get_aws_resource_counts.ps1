@@ -1,6 +1,7 @@
 <#
 .SYNOPSIS
 This solution is provided by LogicMonitor in order to collect cloud resource counts within an AWS environment, for LogicMonitor licensing.
+
 .DESCRIPTION
 This script performs the following tasks:
 1. Enumerates AWS resources across specified regions and/or accounts
@@ -129,7 +130,6 @@ $resourceTypes = @{
         "AWS::ElastiCache::CacheCluster" = "Get-ECCacheCluster"
         "AWS::FSx::FileSystem" = "Get-FSXFileSystem"
         "AWS::Bedrock::FoundationModels" = "Get-BDRFoundationModelList"
-        "AWS::Bedrock::CustomModels" = "Get-BDRCustomModelList"
         "AWS::Redshift::Cluster" = "Get-RSCluster"
         "AWS::RDS::DBInstance" = "Get-RDSDBInstance"
     }
@@ -155,6 +155,57 @@ function Invoke-AssumeRole {
     return $assumedRole.Credentials
 }
 
+function Get-BedrockMetrics {
+    param (
+        [string]$Region,
+        [object]$Credentials,
+        [string]$Account
+    )
+
+    try {
+        $params = @{
+            Namespace = 'AWS/Bedrock'
+            Region = $Region
+            OwningAccount = $Account
+            IncludeLinkedAccount = $true
+        }
+
+        if ($Credentials) {
+            $params['AccessKey'] = $Credentials.AccessKeyId
+            $params['SecretKey'] = $Credentials.SecretAccessKey
+            $params['SessionToken'] = $Credentials.SessionToken
+        }
+
+        Write-Debug "Bedrock Metrics Params:"
+        Write-Debug ($params | Out-String)
+
+        $metrics = @()
+        $metrics = Get-CWMetricList @params
+        if ($metrics) {
+            $groupedMetrics = $metrics | 
+                Where-Object { $_.Dimensions } | 
+                Group-Object -Property { $_.Dimensions.Value } |
+                Select-Object -Property @{
+                    Name = 'ModelId'; 
+                    Expression = { $_.Name }
+                }, @{
+                    Name = 'MetricCount'; 
+                    Expression = { $_.Count }
+                }
+
+            return $groupedMetrics
+        } else {
+            Write-Debug "No Bedrock models found in use for region $Region"
+            return $null
+        }
+
+    } catch {
+        Write-Warning "Error retrieving Bedrock metrics in region $Region`: $_"
+        return $null
+    }
+}
+
+
 function Get-AWSResources {
     param (
         [string[]]$Regions,
@@ -169,35 +220,45 @@ function Get-AWSResources {
     $clientConfig = @{
         Timeout = $timeout
     }
+    Write-Host "Processing $ResourceType"
     $Account = (Get-STSCallerIdentity -Credential $Credentials).Account
     foreach ($region in $Regions) {
+        $resources = @()
         Write-Debug "Processing $ResourceType in region: $region"
         try {
-            $scriptBlock = if ($Cmdlet -like "*-QS*") {
-                if ($Credentials){
-                    [ScriptBlock]::Create("$Cmdlet -Region `$region -AwsAccountId `$Account -ClientConfig `$clientConfig -AccessKey $($Credentials.AccessKeyId) -SecretKey $($Credentials.SecretAccessKey) -SessionToken $($Credentials.SessionToken)")
-                } else {
-                    [ScriptBlock]::Create("$Cmdlet -Region `$region -AwsAccountId `$Account -ClientConfig `$clientConfig")
-                }
+            if ($ResourceType -eq "AWS::Bedrock::FoundationModels") {
+                $resources = Get-BedrockMetrics -Region $region -Credentials $Credentials -Account $Account
             } else {
-                if ($Credentials) {
-                    [ScriptBlock]::Create("$Cmdlet -Region `$region -ClientConfig `$clientConfig -AccessKey $($Credentials.AccessKeyId) -SecretKey $($Credentials.SecretAccessKey) -SessionToken $($Credentials.SessionToken)")
+                $scriptBlock = if ($Cmdlet -like "*-QS*") {
+                    if ($Credentials){
+                        [ScriptBlock]::Create("$Cmdlet -Region `$region -AwsAccountId `$Account -ClientConfig `$clientConfig -AccessKey $($Credentials.AccessKeyId) -SecretKey $($Credentials.SecretAccessKey) -SessionToken $($Credentials.SessionToken)")
+                    } else {
+                        [ScriptBlock]::Create("$Cmdlet -Region `$region -AwsAccountId `$Account -ClientConfig `$clientConfig")
+                    }
                 } else {
-                    [ScriptBlock]::Create("$Cmdlet -Region `$region -ClientConfig `$clientConfig")
-                }
+                    if ($Credentials) {
+                        [ScriptBlock]::Create("$Cmdlet -Region `$region -ClientConfig `$clientConfig -AccessKey $($Credentials.AccessKeyId) -SecretKey $($Credentials.SecretAccessKey) -SessionToken $($Credentials.SessionToken)")
+                    } else {
+                        [ScriptBlock]::Create("$Cmdlet -Region `$region -ClientConfig `$clientConfig")
+                    }
+                };                
+                $resources = & $scriptBlock
             }
-            
-            $resources = & $scriptBlock
-            $allResources += $resources | ForEach-Object {
-                [PSCustomObject]@{
-                    Region = $region
-                    ResourceType = $ResourceType
-                    Category = $Category
-                    AccountId = $Account
+            if ($resources) {
+                $allResources += $resources | ForEach-Object {
+                    [PSCustomObject]@{
+                        Region = $region
+                        ResourceType = $ResourceType
+                        Category = $Category
+                        AccountId = $Account
+                    }
                 }
             }
         } catch {
-            if ($_.Exception.Message -notlike "*is not supported in this region*" -or $_.Exception.Message -notlike "*Name or service not known*") {
+            if ($_.Exception.Message -notlike "*is not supported in this region*" -and
+                $_.Exception.Message -notlike "*Name or service not known*" -and
+                $_.Exception.Message -notlike "*New domain creation not supported on this account*" -and
+                $_.Exception.Message -notlike "*is not subscribed for*") {
                 Write-Warning "Error processing $ResourceType in region $region`: $_"
             }
         }
@@ -224,9 +285,9 @@ try {
         $processedCount = 0
     
         foreach ($account in $accounts) {
-            Write-Host "Processing account: $($account.Id)"
             try {
                 $assumedCredentials = Invoke-AssumeRole -AccountId $account.Id -RoleName $AssumeRole
+                Write-Host "Processing account: $($account.Id)"
     
                 foreach ($category in $resourceTypes.Keys) {
                     foreach ($resourceType in $resourceTypes[$category].Keys) {
@@ -256,7 +317,6 @@ try {
             }
         }
     }
-
 
     $summaryData = $allResources | Group-Object -Property Category, AccountId | ForEach-Object {
         [PSCustomObject]@{
