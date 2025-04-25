@@ -231,15 +231,15 @@ function Get-AWSResources {
             } else {
                 $scriptBlock = if ($Cmdlet -like "*-QS*") {
                     if ($Credentials){
-                        [ScriptBlock]::Create("$Cmdlet -Region `$region -AwsAccountId `$Account -ClientConfig `$clientConfig -AccessKey $($Credentials.AccessKeyId) -SecretKey $($Credentials.SecretAccessKey) -SessionToken $($Credentials.SessionToken)")
+                        [ScriptBlock]::Create("$Cmdlet -Region $($region) -AwsAccountId $($Account) -ClientConfig $($clientConfig) -AccessKey $($Credentials.AccessKeyId) -SecretKey $($Credentials.SecretAccessKey) -SessionToken $($Credentials.SessionToken)")
                     } else {
-                        [ScriptBlock]::Create("$Cmdlet -Region `$region -AwsAccountId `$Account -ClientConfig `$clientConfig")
+                        [ScriptBlock]::Create("$Cmdlet -Region $($region) -AwsAccountId $($Account) -ClientConfig $($clientConfig)")
                     }
                 } else {
                     if ($Credentials) {
-                        [ScriptBlock]::Create("$Cmdlet -Region `$region -ClientConfig `$clientConfig -AccessKey $($Credentials.AccessKeyId) -SecretKey $($Credentials.SecretAccessKey) -SessionToken $($Credentials.SessionToken)")
+                        [ScriptBlock]::Create("$Cmdlet -Region $($region) -ClientConfig $($clientConfig) -AccessKey $($Credentials.AccessKeyId) -SecretKey $($Credentials.SecretAccessKey) -SessionToken $($Credentials.SessionToken)")
                     } else {
-                        [ScriptBlock]::Create("$Cmdlet -Region `$region -ClientConfig `$clientConfig")
+                        [ScriptBlock]::Create("$Cmdlet -Region $($region) -ClientConfig $($clientConfig)")
                     }
                 };                
                 $resources = & $scriptBlock
@@ -266,6 +266,45 @@ function Get-AWSResources {
     return $allResources
 }
 
+# Function to recursively get accounts from an OU and its sub-OUs
+function Get-RecursiveOrgAccounts {
+    param (
+        [Parameter(Mandatory=$true)]
+        [string]$ParentId
+    )
+
+    $accounts = @()
+
+    # Get accounts directly under this parent
+    try {
+        $directAccounts = Get-ORGAccountForParent -ParentId $ParentId -ErrorAction Stop
+        if ($directAccounts) {
+            $accounts += $directAccounts
+        }
+    } catch {
+        Write-Warning ("Could not retrieve accounts for parent {0}: {1}" -f $ParentId, $_)
+    }
+
+
+    # Get child OUs under this parent
+    try {
+        # Corrected cmdlet: Get-ORGOrganizationalUnitList
+        $childOUs = Get-ORGOrganizationalUnitList -ParentId $ParentId -ErrorAction Stop
+        if ($childOUs) {
+            foreach ($ou in $childOUs) {
+                Write-Debug "Descending into OU: $($ou.Id) ($($ou.Name))"
+                # Recursively call for each child OU
+                $accounts += Get-RecursiveOrgAccounts -ParentId $ou.Id
+            }
+        }
+    } catch {
+        Write-Warning ("Could not retrieve child OUs for parent {0}: {1}" -f $ParentId, $_)
+    }
+
+
+    return $accounts
+}
+
 # Main script execution
 try {
     # Check AWS connection
@@ -275,20 +314,23 @@ try {
     }
     Write-Host "Connected to AWS as: $($currentIdentity.Arn)"
 
-    # Get accounts in the specified OU
+    # Get accounts in the specified OU and its sub-OUs
     if ($OrganizationalUnitId -and $AssumeRole){
-        $accounts = Get-ORGAccountForParent -ParentId $OrganizationalUnitId
-        Write-Host "Found $(($accounts | Measure-Object).Count) accounts in the specified OU."
-    
+        Write-Host "Recursively retrieving accounts under OU: $OrganizationalUnitId"
+        # Use the recursive function and sort unique
+        $accounts = Get-RecursiveOrgAccounts -ParentId $OrganizationalUnitId | Sort-Object -Property Id -Unique
+        Write-Host "Found $(($accounts | Measure-Object).Count) accounts in the specified OU hierarchy."
+
         $allResources = @()
+        # Calculate total based on unique accounts found
         $totalServices = ($resourceTypes.Values | ForEach-Object { $_.Keys }).Count * $($accounts | Measure-Object).Count
         $processedCount = 0
-    
+
         foreach ($account in $accounts) {
             try {
                 $assumedCredentials = Invoke-AssumeRole -AccountId $account.Id -RoleName $AssumeRole
                 Write-Host "Processing account: $($account.Id)"
-    
+
                 foreach ($category in $resourceTypes.Keys) {
                     foreach ($resourceType in $resourceTypes[$category].Keys) {
                         $cmdlet = $resourceTypes[$category][$resourceType]
@@ -301,7 +343,7 @@ try {
             } catch {
                 Write-Error "Error unable to process account $($account.Id): $_"
             }
-        }        
+        }
     } else {
         $allResources = @()
         $totalServices = ($resourceTypes.Values | ForEach-Object { $_.Keys }).Count
