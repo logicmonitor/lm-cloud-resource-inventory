@@ -166,8 +166,8 @@ function Get-AzureResources {
                 $vmssInstances += Get-AzVmssVM -ResourceGroupName $rg -ErrorAction SilentlyContinue
             }
         } else {
-            $resourceGroups = (Get-AzResourceGroup | Measure-Object).Count
-            Write-Host "Processing all $resourceGroups resource groups in subscription: $subscription"
+            $resourceGroupCount = (Get-AzResourceGroup | Measure-Object).Count
+            Write-Host "Processing all $resourceGroupCount resource groups in subscription: $subscription"
 
             $subscriptionResources = Get-AzResource
             $vmssInstances = Get-AzVmssVM -ErrorAction SilentlyContinue
