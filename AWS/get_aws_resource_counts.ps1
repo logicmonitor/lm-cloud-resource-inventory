@@ -231,15 +231,15 @@ function Get-AWSResources {
             } else {
                 $scriptBlock = if ($Cmdlet -like "*-QS*") {
                     if ($Credentials){
-                        [ScriptBlock]::Create("$Cmdlet -Region $($region) -AwsAccountId $($Account) -ClientConfig $($clientConfig) -AccessKey $($Credentials.AccessKeyId) -SecretKey $($Credentials.SecretAccessKey) -SessionToken $($Credentials.SessionToken)")
+                        [ScriptBlock]::Create("$Cmdlet -Region `$region -AwsAccountId `$Account -ClientConfig `$clientConfig -AccessKey $($Credentials.AccessKeyId) -SecretKey $($Credentials.SecretAccessKey) -SessionToken $($Credentials.SessionToken)")
                     } else {
-                        [ScriptBlock]::Create("$Cmdlet -Region $($region) -AwsAccountId $($Account) -ClientConfig $($clientConfig)")
+                        [ScriptBlock]::Create("$Cmdlet -Region `$region -AwsAccountId `$Account -ClientConfig `$clientConfig")
                     }
                 } else {
                     if ($Credentials) {
-                        [ScriptBlock]::Create("$Cmdlet -Region $($region) -ClientConfig $($clientConfig) -AccessKey $($Credentials.AccessKeyId) -SecretKey $($Credentials.SecretAccessKey) -SessionToken $($Credentials.SessionToken)")
+                        [ScriptBlock]::Create("$Cmdlet -Region `$region -ClientConfig `$clientConfig -AccessKey $($Credentials.AccessKeyId) -SecretKey $($Credentials.SecretAccessKey) -SessionToken $($Credentials.SessionToken)")
                     } else {
-                        [ScriptBlock]::Create("$Cmdlet -Region $($region) -ClientConfig $($clientConfig)")
+                        [ScriptBlock]::Create("$Cmdlet -Region `$region -ClientConfig `$clientConfig")
                     }
                 };                
                 $resources = & $scriptBlock
