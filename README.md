@@ -29,9 +29,43 @@ For users with advanced cloud experience, the scripts can also be executed from 
 **Note:**  Cloud provider CLIs have all required dependencies already installed.
 
 **AWS**
-* PowerShell AWS.Tools module - [How to install the AWS.Tools PowerShell module](https://docs.aws.amazon.com/powershell/latest/userguide/pstools-getting-set-up.html)
 * PowerShell version 5.1 or later
-  
+* AWS.Tools PowerShell modules - [How to install the AWS.Tools PowerShell module](https://docs.aws.amazon.com/powershell/latest/userguide/pstools-getting-set-up.html)
+
+### Installing AWS.Tools Modules
+
+```powershell
+# Install the AWS.Tools installer first
+Install-Module -Name AWS.Tools.Installer -Force -AllowClobber
+
+# Then install all required modules using the installer
+Install-AWSToolsModule -Name @(
+    'AWS.Tools.Account', 'AWS.Tools.APIGateway', 'AWS.Tools.ApiGatewayV2', 'AWS.Tools.AppStream',
+    'AWS.Tools.Athena', 'AWS.Tools.Backup', 'AWS.Tools.Bedrock', 'AWS.Tools.CloudFront',
+    'AWS.Tools.CloudSearch', 'AWS.Tools.CloudWatch', 'AWS.Tools.DirectConnect', 'AWS.Tools.DocDBElastic',
+    'AWS.Tools.DynamoDBv2', 'AWS.Tools.EC2', 'AWS.Tools.ECS', 'AWS.Tools.ElasticFileSystem', 'AWS.Tools.EKS',
+    'AWS.Tools.ElastiCache', 'AWS.Tools.ElasticBeanstalk', 'AWS.Tools.ElasticLoadBalancing',
+    'AWS.Tools.ElasticLoadBalancingV2', 'AWS.Tools.EMRServerless', 'AWS.Tools.FSx', 'AWS.Tools.Glue',
+    'AWS.Tools.Kafka', 'AWS.Tools.Kinesis', 'AWS.Tools.KinesisFirehose', 'AWS.Tools.KinesisVideo',
+    'AWS.Tools.Lambda', 'AWS.Tools.MediaConnect', 'AWS.Tools.MediaPackage', 'AWS.Tools.MediaPackageVod',
+    'AWS.Tools.MQ', 'AWS.Tools.NetworkManager', 'AWS.Tools.OpenSearchService', 'AWS.Tools.Organizations',
+    'AWS.Tools.QBusiness', 'AWS.Tools.QuickSight', 'AWS.Tools.RDS', 'AWS.Tools.Redshift',
+    'AWS.Tools.RedshiftServerless', 'AWS.Tools.Route53', 'AWS.Tools.S3', 'AWS.Tools.SecurityToken',
+    'AWS.Tools.SimpleEmailV2', 'AWS.Tools.SimpleNotificationService', 'AWS.Tools.SQS', 'AWS.Tools.StepFunctions'
+) -Force
+```
+
+
+#### Verification
+After installation, you can verify the modules are available:
+```powershell
+# Check if all modules are installed
+Get-Module -ListAvailable AWS.Tools.*
+
+# Test AWS connection
+Get-STSCallerIdentity
+```
+
 **Azure**
 * PowerShell Az module - [How to install the PowerShell Az module](https://learn.microsoft.com/en-us/powershell/azure/install-azps-windows?view=azps-12.3.0&tabs=powershell&pivots=windows-psgallery)
 * PowerShell version 5.1 or later
