@@ -15,11 +15,14 @@ This tool collects resource inventory from cloud providers and calculates LogicM
 ### Installation
 
 ```bash
-# Clone the repository
+pip install lm-cloud-inventory
+```
+
+Or install from source:
+
+```bash
 git clone https://github.com/logicmonitor/lm-cloud-resource-inventory.git
 cd lm-cloud-resource-inventory
-
-# Install the package (enables lmci command)
 pip install .
 ```
 
