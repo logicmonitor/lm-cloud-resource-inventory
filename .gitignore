@@ -31,3 +31,6 @@ MANIFEST
 .DS_Store
 /*.csv
 /*.json
+
+# Generated version file (created by setuptools-scm)
+src/_version.py

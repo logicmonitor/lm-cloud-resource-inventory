@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=61.0", "setuptools-scm>=8.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "lm-cloud-inventory"
-version = "2.0.0"
+dynamic = ["version"]
 description = "Cloud resource inventory collection for LogicMonitor licensing"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -18,9 +18,15 @@ lmci = "src.cli:main"
 where = ["."]
 include = ["src*"]
 
+[tool.setuptools.package-data]
+"src.config" = ["*.json"]
+
+[tool.setuptools_scm]
+version_file = "src/_version.py"
+
 # Pylint Configuration
 [tool.pylint.main]
-ignore = ["tests", ".git", "__pycache__"]
+ignore = ["tests", ".git", "__pycache__", "_version.py", "build"]
 jobs = 0
 py-version = "3.9"
 recursive = true

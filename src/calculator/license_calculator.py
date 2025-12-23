@@ -2,10 +2,18 @@
 
 import json
 import logging
+import math
 from typing import Dict, List, Set, Tuple
 from collections import defaultdict
 
 logger = logging.getLogger(__name__)
+
+# Hybrid Resource Unit ratios (per LogicMonitor documentation)
+# https://www.logicmonitor.com/support/usage-reporting-for-hybrid-resource-units
+HYBRID_UNIT_RATIOS = {
+    "IaaS": 1,      # 1 IaaS instance = 1 HRU
+    "PaaS": 7,      # 7 PaaS resources = 1 HRU
+}
 
 
 class LicenseCalculator:
@@ -130,6 +138,25 @@ class LicenseCalculator:
         """
         return self._unsupported_types
 
+    def calculate_hybrid_units(self, iaas_count: int, paas_count: int) -> int:
+        """
+        Calculate Hybrid Resource Units from IaaS and PaaS counts.
+        
+        Per LogicMonitor documentation:
+        - IaaS: 1:1 ratio (1 IaaS = 1 HRU)
+        - PaaS: 7:1 ratio (7 PaaS = 1 HRU, rounded UP)
+        
+        Args:
+            iaas_count: Total IaaS resource count.
+            paas_count: Total PaaS resource count.
+            
+        Returns:
+            Total Hybrid Resource Units.
+        """
+        iaas_hru = iaas_count  # 1:1 ratio
+        paas_hru = math.ceil(paas_count / HYBRID_UNIT_RATIOS["PaaS"]) if paas_count > 0 else 0
+        return iaas_hru + paas_hru
+
     def calculate(self, inventory: List[Dict]) -> Dict:
         """
         Calculate license requirements from inventory.
@@ -174,10 +201,17 @@ class LicenseCalculator:
             for category, count in provider_summary.items():
                 totals[category] += count
 
+        # Calculate Hybrid Resource Units
+        hybrid_units = self.calculate_hybrid_units(
+            totals.get('IaaS', 0),
+            totals.get('PaaS', 0)
+        )
+
         result = {
             'summary': {
                 'by_provider': dict(summary),
-                'totals': dict(totals)
+                'totals': dict(totals),
+                'hybrid_units': hybrid_units
             },
             'detailed': detailed,
             'unsupported_types': list(self._unsupported_types)
@@ -241,6 +275,10 @@ class LicenseCalculator:
                 count = results['summary']['totals'].get(category, 0)
                 if count > 0:
                     writer.writerow(['TOTAL', '', category, '', '', count])
+
+            # Add Hybrid Resource Units row
+            hybrid_units = results['summary'].get('hybrid_units', 0)
+            writer.writerow(['TOTAL', '', 'HYBRID UNITS', '', '', hybrid_units])
 
         logger.info("Saved summary to %s", output_path)
 
@@ -316,6 +354,14 @@ class LicenseCalculator:
             count = results['summary']['totals'].get(category, 0)
             if count > 0:
                 print(f"  {category:20} {count:>10}")
+
+        # Hybrid Resource Units
+        hybrid_units = results['summary'].get('hybrid_units', 0)
+        iaas_count = results['summary']['totals'].get('IaaS', 0)
+        paas_count = results['summary']['totals'].get('PaaS', 0)
+        print("-" * 40)
+        print(f"  {'HYBRID RESOURCE UNITS':20} {hybrid_units:>10}")
+        print(f"    (IaaS: {iaas_count} + PaaS: ceil({paas_count}/7))")
 
         # Unmapped types notice
         unsupported = self.get_unsupported_types()

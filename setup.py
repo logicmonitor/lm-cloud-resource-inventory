@@ -1,12 +1,6 @@
 """Setup script for LM Cloud Resource Inventory."""
 
-import re
 from setuptools import setup, find_packages
-
-# Read version from src/__init__.py
-with open("src/__init__.py", "r", encoding="utf-8") as fh:
-    version_match = re.search(r'^__version__\s*=\s*["\']([^"\']+)["\']', fh.read(), re.MULTILINE)
-    version = version_match.group(1) if version_match else "0.0.0"
 
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
@@ -16,7 +10,8 @@ with open("requirements.txt", "r", encoding="utf-8") as fh:
 
 setup(
     name="lm-cloud-inventory",
-    version=version,
+    use_scm_version=True,
+    setup_requires=["setuptools-scm"],
     author="LogicMonitor",
     author_email="support@logicmonitor.com",
     description="Cloud resource inventory collection for LogicMonitor licensing",
