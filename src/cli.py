@@ -170,13 +170,13 @@ def collect(
               help='Output summary CSV file')
 @click.option('--detailed', '-d', is_flag=True,
               help='Generate detailed output with resource breakdown')
-@click.option('--show-unsupported', is_flag=True,
-              help='Show unsupported resource types')
+@click.option('--show-unmapped', is_flag=True,
+              help='List resource types not mapped to license categories')
 def calculate(
     input_path: str,
     output: str,
     detailed: bool,
-    show_unsupported: bool
+    show_unmapped: bool
 ):
     """
     Calculate license requirements from inventory.
@@ -185,7 +185,7 @@ def calculate(
     
       lm-cloud-inventory calculate -i inventory.json -o summary.csv
       
-      lm-cloud-inventory calculate -i inventory.json -d --show-unsupported
+      lm-cloud-inventory calculate -i inventory.json -d --show-unmapped
     """
     console.print("\n[bold blue]Calculating license requirements...[/bold blue]\n")
 
@@ -214,12 +214,12 @@ def calculate(
         # Print summary
         calculator.print_summary(results)
 
-        # Show unsupported types if requested
-        unsupported = calculator.get_unsupported_types()
-        if show_unsupported and unsupported:
-            console.print("\n[yellow]Unsupported Resource Types:[/yellow]")
-            for prov, resource_type in sorted(unsupported):
-                console.print(f"  [{prov}] {resource_type}")
+        # Show unmapped types if requested
+        unmapped = calculator.get_unsupported_types()
+        if show_unmapped and unmapped:
+            console.print("\n[dim]Unmapped Resource Types (not counted toward licensing):[/dim]")
+            for _, resource_type in sorted(unmapped):
+                console.print(f"   {resource_type}")
 
         console.print(f"\n[green]✓ Summary saved to {output}[/green]\n")
 
@@ -241,6 +241,8 @@ def calculate(
               help='Output summary CSV file')
 @click.option('--detailed', '-d', is_flag=True,
               help='Generate detailed output')
+@click.option('--show-unmapped', is_flag=True,
+              help='List resource types not mapped to license categories')
 @click.option('--profile', help='AWS profile name')
 @click.option('--subscription', '-s', multiple=True,
               help='Azure subscription ID(s)')
@@ -250,6 +252,7 @@ def run(
     provider: str,
     output: str,
     detailed: bool,
+    show_unmapped: bool,
     profile: Optional[str],
     subscription: tuple,
     project: Optional[str],
@@ -262,7 +265,7 @@ def run(
     
       lm-cloud-inventory run -p aws -o aws_summary.csv
       
-      lm-cloud-inventory run -p azure -d
+      lm-cloud-inventory run -p azure -d --show-unmapped
     """
     import tempfile
 
@@ -315,6 +318,13 @@ def run(
 
         # Print summary
         calculator.print_summary(results)
+
+        # Show unmapped types if requested
+        unmapped = calculator.get_unsupported_types()
+        if show_unmapped and unmapped:
+            console.print("\n[dim]Unmapped Resource Types (not counted toward licensing):[/dim]")
+            for _, resource_type in sorted(unmapped):
+                console.print(f"   {resource_type}")
 
         console.print(f"\n[green]✓ Summary saved to {output}[/green]\n")
 

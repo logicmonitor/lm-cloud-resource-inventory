@@ -62,6 +62,8 @@ class AWSCollector(BaseCollector):
         self.organization_role = organization_role
         self._session = None
         self._account_id = None
+        self._aggregator_region = None
+        self._local_index_regions = []
 
     def _get_session(self, profile_name: str = None, credentials: Dict = None):
         """Get boto3 session."""
@@ -129,7 +131,39 @@ class AWSCollector(BaseCollector):
                     )
                     return False
 
-                logger.info("AWS Resource Explorer is enabled")
+                # Find the aggregator index for cross-region queries
+                aggregator_region = None
+                local_regions = []
+                for idx in indexes.get('Indexes', []):
+                    idx_type = idx.get('Type', 'LOCAL')
+                    idx_region = idx.get('Region', '')
+                    if idx_type == 'AGGREGATOR':
+                        aggregator_region = idx_region
+                    else:
+                        local_regions.append(idx_region)
+
+                # Store for use during collection
+                self._local_index_regions = sorted(local_regions)
+
+                if aggregator_region:
+                    logger.info(
+                        "Found Resource Explorer aggregator in %s",
+                        aggregator_region
+                    )
+                    logger.info(
+                        "Will query aggregator for all %d indexed regions",
+                        len(local_regions) + 1  # aggregator region is also indexed
+                    )
+                    self._aggregator_region = aggregator_region
+                else:
+                    logger.info(
+                        "No aggregator index found - will query %d regional indexes",
+                        len(local_regions)
+                    )
+                    if local_regions:
+                        logger.info("Indexed regions: %s", ", ".join(sorted(local_regions)))
+                    self._aggregator_region = None
+
                 return True
 
             except rex.exceptions.AccessDeniedException:
@@ -159,30 +193,83 @@ class AWSCollector(BaseCollector):
 
     def _collect_via_resource_explorer(self, session, account_id: str) -> List[Dict]:
         """
-        Collect resources using AWS Resource Explorer.
+        Collect resources using AWS Resource Explorer ListResources API.
         
-        This is the fast path - single API call for all resources.
+        Uses the aggregator index if available for cross-region queries,
+        otherwise queries each regional index individually.
+        
+        Note: We use ListResources instead of Search because the Search API
+        has a hard limit of 1000 results. ListResources supports true pagination.
+        See: https://docs.aws.amazon.com/resource-explorer/latest/apireference/API_ListResources.html
         """
-        rex = session.client('resource-explorer-2')
-        inventory = []
+        # Determine which regions to query
+        if self._aggregator_region:
+            # Single query to aggregator gets all regions
+            regions_to_query = [self._aggregator_region]
+            logger.info("Querying aggregator index in %s", self._aggregator_region)
+        elif self._local_index_regions:
+            # No aggregator - query each regional index
+            regions_to_query = self._local_index_regions
+            logger.info("Querying %d regional indexes...", len(regions_to_query))
+        else:
+            # Fallback to configured region only
+            regions_to_query = [self.region]
+            logger.warning("No index information available, querying %s only", self.region)
 
-        # Get all resource types and counts
-        # Resource Explorer returns resources grouped by type
-        paginator = rex.get_paginator('search')
-
-        # Search for all resources
+        # Count resources by type and region
         resource_counts = {}
+        total_resources = 0
+        regions_queried = 0
 
         try:
-            for page in paginator.paginate(QueryString="*"):
-                for resource in page.get('Resources', []):
-                    resource_type = resource.get('ResourceType', '')
-                    region = resource.get('Region', 'global')
+            for query_region in regions_to_query:
+                regions_queried += 1
 
-                    key = (resource_type, region)
-                    resource_counts[key] = resource_counts.get(key, 0) + 1
+                # Log progress when querying multiple regions
+                if len(regions_to_query) > 1:
+                    logger.info(
+                        "Querying region %d/%d: %s",
+                        regions_queried, len(regions_to_query), query_region
+                    )
+
+                rex = session.client('resource-explorer-2', region_name=query_region)
+
+                # Use ListResources API with pagination (no 1000 result limit)
+                # MaxResults must be < 1000 to ensure NextToken is returned
+                next_token = None
+
+                while True:
+                    params = {'MaxResults': 500}
+                    if next_token:
+                        params['NextToken'] = next_token
+
+                    response = rex.list_resources(**params)
+
+                    for resource in response.get('Resources', []):
+                        resource_type = resource.get('ResourceType', '')
+                        region = resource.get('Region', 'global')
+
+                        key = (resource_type, region)
+                        resource_counts[key] = resource_counts.get(key, 0) + 1
+                        total_resources += 1
+
+                    # Log progress for large inventories
+                    if total_resources > 0 and total_resources % 5000 == 0:
+                        logger.info("Scanned %d resources so far...", total_resources)
+
+                    next_token = response.get('NextToken')
+                    if not next_token:
+                        break
+
+            # Summary log
+            unique_regions = set(r for (_, r) in resource_counts)
+            logger.info(
+                "Scanned %d resources across %d regions",
+                total_resources, len(unique_regions)
+            )
 
             # Convert counts to inventory records
+            inventory = []
             for (resource_type, region), count in resource_counts.items():
                 record = self.create_inventory_record(
                     account_id=account_id,
@@ -192,10 +279,11 @@ class AWSCollector(BaseCollector):
                 )
                 inventory.append(record)
 
-        except Exception as e:
-            logger.error("Resource Explorer search failed: %s", e)
+            return inventory
 
-        return inventory
+        except Exception as e:
+            logger.error("Resource Explorer list_resources failed: %s", e)
+            return []
 
     def _get_org_accounts(self) -> List[Dict]:
         """Get all accounts in the organization."""

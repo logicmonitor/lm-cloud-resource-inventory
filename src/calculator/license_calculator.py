@@ -282,13 +282,13 @@ class LicenseCalculator:
             if category != 'Unsupported':
                 print(f"  {category:20} {count:>10}")
 
-        # Unsupported types warning
+        # Unmapped types notice
         unsupported = self.get_unsupported_types()
         if unsupported:
             print("\n" + "=" * 70)
-            print(f"WARNING: {len(unsupported)} unsupported resource types found")
-            print("These resources are not counted toward license requirements.")
-            print("Run with --show-unsupported to see the list.")
+            print(f"NOTE: {len(unsupported)} resource types not mapped to license categories")
+            print("These are typically infrastructure/config resources (IAM, VPC, etc.)")
+            print("that don't count toward licensing. Use --show-unmapped to list them.")
 
         print("=" * 70 + "\n")
 
