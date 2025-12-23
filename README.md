@@ -181,7 +181,7 @@ If you have significant usage of these services, contact your LogicMonitor repre
 
 - **Python 3.9+**
 - Cloud provider credentials configured
-- Read-only permissions (see [docs/PERMISSIONS.md](docs/PERMISSIONS.md))
+- Read-only permissions (see [Permissions Documentation](https://github.com/logicmonitor/lm-cloud-resource-inventory/blob/main/docs/PERMISSIONS.md))
 
 ---
 
@@ -356,7 +356,7 @@ AWS Resource Explorer is required. Enable it in your account:
 aws sts get-caller-identity
 ```
 
-Check [docs/PERMISSIONS.md](docs/PERMISSIONS.md) for required IAM permissions.
+Check [Permissions Documentation](https://github.com/logicmonitor/lm-cloud-resource-inventory/blob/main/docs/PERMISSIONS.md) for required IAM permissions.
 
 ### Azure: "AuthorizationFailed"
 
@@ -415,8 +415,7 @@ pip install .
 
 ## Documentation
 
-- [Required Permissions](docs/PERMISSIONS.md)
-- [Architecture](docs/ARCHITECTURE.md)
+- [Required Permissions](https://github.com/logicmonitor/lm-cloud-resource-inventory/blob/main/docs/PERMISSIONS.md)
 - [LogicMonitor Cloud Services](https://www.logicmonitor.com/support/cloud-services-and-resource-units)
 
 ---
@@ -430,4 +429,4 @@ pip install .
 
 ## License
 
-MIT License - See [LICENSE](LICENSE) file for details.
+MIT License - See [LICENSE](https://github.com/logicmonitor/lm-cloud-resource-inventory/blob/main/LICENSE) file for details.
