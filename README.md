@@ -180,7 +180,10 @@ If you have significant usage of these services, contact your LogicMonitor repre
 ## Requirements
 
 - **Python 3.9+**
-- Cloud provider credentials configured
+- Cloud provider credentials configured via one of:
+  - CLI tools (`aws`, `az`, `gcloud`, `oci`) - *recommended for local use*
+  - Environment variables
+  - Service account files
 - Read-only permissions (see [Permissions Documentation](https://github.com/logicmonitor/lm-cloud-resource-inventory/blob/main/docs/PERMISSIONS.md))
 
 ---
