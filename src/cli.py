@@ -159,7 +159,9 @@ def collect(
 
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        logging.exception("Collection failed")
+        # Only show traceback in verbose mode
+        if logging.getLogger('src').level == logging.DEBUG:
+            logging.exception("Collection failed")
         sys.exit(1)
 
 
@@ -229,7 +231,9 @@ def calculate(
 
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        logging.exception("Calculation failed")
+        # Only show traceback in verbose mode
+        if logging.getLogger('src').level == logging.DEBUG:
+            logging.exception("Calculation failed")
         sys.exit(1)
 
 
@@ -333,7 +337,9 @@ def run(
 
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        logging.exception("Run failed")
+        # Only show traceback in verbose mode
+        if logging.getLogger('src').level == logging.DEBUG:
+            logging.exception("Run failed")
         sys.exit(1)
 
 

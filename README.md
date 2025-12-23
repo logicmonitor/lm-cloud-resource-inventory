@@ -19,23 +19,129 @@ This tool collects resource inventory from cloud providers and calculates LogicM
 git clone https://github.com/logicmonitor/lm-cloud-resource-inventory.git
 cd lm-cloud-resource-inventory
 
-# Install dependencies
-pip install -r requirements.txt
+# Install the package (enables lmci command)
+pip install .
 ```
 
 ### Basic Usage
 
 ```bash
-# Collect and calculate in one step
-python -m src.cli run -p aws -o aws_summary.csv
-python -m src.cli run -p azure -o azure_summary.csv
-python -m src.cli run -p gcp -o gcp_summary.csv
-python -m src.cli run -p oci -o oci_summary.csv
-
-# Or collect and calculate separately
-python -m src.cli collect -p aws -o aws_inventory.json
-python -m src.cli calculate -i aws_inventory.json -o aws_summary.csv
+# Run inventory and calculate licenses
+lmci run -p aws -o aws_summary.csv
+lmci run -p azure -o azure_summary.csv
+lmci run -p gcp -o gcp_summary.csv
+lmci run -p oci -o oci_summary.csv
 ```
+
+---
+
+## CLI Reference
+
+### Global Options
+
+| Option | Description |
+|--------|-------------|
+| `-v, --verbose` | Enable verbose logging (shows debug info and full tracebacks) |
+| `--version` | Show version and exit |
+| `--help` | Show help message |
+
+### `run` Command (Recommended)
+
+Collect inventory and calculate licenses in one step. This is the primary command for most users.
+
+```bash
+lmci run -p <provider> [options]
+```
+
+| Option | Provider | Description |
+|--------|----------|-------------|
+| `-p, --provider` | All | Cloud provider: `aws`, `azure`, `gcp`, `oci` **(required)** |
+| `-o, --output` | All | Output CSV file (default: `license_summary.csv`) |
+| `-d, --detailed` | All | Generate detailed CSV with per-region breakdown |
+| `--show-unmapped` | All | List resource types not mapped to license categories |
+| `--profile` | AWS | AWS CLI profile name |
+| `-s, --subscription` | Azure | Subscription ID (can be repeated for multiple) |
+| `--project` | GCP | GCP project ID |
+| `--compartment` | OCI | OCI compartment OCID |
+
+**Examples:**
+
+```bash
+# AWS - basic
+lmci run -p aws
+
+# AWS - with named profile
+lmci run -p aws --profile production -o aws_prod.csv
+
+# Azure - all subscriptions
+lmci run -p azure
+
+# Azure - specific subscriptions
+lmci run -p azure -s "sub-id-1" -s "sub-id-2"
+
+# GCP - auto-detect project from credentials
+lmci run -p gcp
+
+# GCP - explicit project
+lmci run -p gcp --project my-project-id
+
+# OCI - entire tenancy
+lmci run -p oci
+
+# OCI - specific compartment
+lmci run -p oci --compartment ocid1.compartment.oc1..xxx
+
+# Any provider - with detailed output
+lmci run -p aws -d -o detailed_report.csv
+```
+
+### `collect` Command
+
+Collect inventory only (saves JSON for later calculation).
+
+```bash
+lmci collect -p <provider> [options]
+```
+
+| Option | Provider | Description |
+|--------|----------|-------------|
+| `-p, --provider` | All | Cloud provider **(required)** |
+| `-o, --output` | All | Output JSON file (default: `inventory.json`) |
+| `--profile` | AWS | AWS CLI profile name |
+| `--region` | AWS | AWS region for API calls (default: `us-east-1`) |
+| `--organization` | AWS | IAM role name for cross-account access |
+| `--organization` | GCP | GCP organization ID for org-wide inventory |
+| `-s, --subscription` | Azure | Subscription ID (repeatable) |
+| `--project` | GCP | GCP project ID |
+| `--compartment` | OCI | OCI compartment OCID |
+
+### `calculate` Command
+
+Calculate licenses from an existing inventory JSON file.
+
+```bash
+lmci calculate -i <inventory.json> [options]
+```
+
+| Option | Description |
+|--------|-------------|
+| `-i, --input` | Input inventory JSON file **(required)** |
+| `-o, --output` | Output CSV file (default: `license_summary.csv`) |
+| `-d, --detailed` | Generate detailed CSV |
+| `--show-unmapped` | List unmapped resource types |
+
+### `permissions` Command
+
+Show required permissions for each cloud provider.
+
+```bash
+lmci permissions -p aws
+lmci permissions -p azure
+lmci permissions -p gcp
+lmci permissions -p oci
+```
+
+---
 
 ## Supported Cloud Providers
 
@@ -46,11 +152,11 @@ python -m src.cli calculate -i aws_inventory.json -o aws_summary.csv
 | **GCP** | Cloud Asset Inventory | ~1-2 minutes |
 | **OCI** | OCI Search Service | ~1 minute |
 
-For a complete list of supported resources, see [docs/SUPPORTED_RESOURCES.md](https://www.logicmonitor.com/support/cloud-services-and-resource-units).
+For a complete list of supported resources, see [LogicMonitor Cloud Services Documentation](https://www.logicmonitor.com/support/cloud-services-and-resource-units).
 
 ### AWS Resource Explorer Limitations
 
-The following AWS services are **not supported** by AWS Resource Explorer and will not be collected:
+The following AWS services are **not indexed** by AWS Resource Explorer and will not be collected:
 
 | Service | Resource Type |
 |---------|---------------|
@@ -64,38 +170,33 @@ The following AWS services are **not supported** by AWS Resource Explorer and wi
 | Application Migration Service | Source Server |
 | ElasticTranscoder | Pipeline |
 
-These are generally legacy services or very new services. If you have significant usage of these services, please contact your LogicMonitor representative for manual inventory assistance.
+If you have significant usage of these services, contact your LogicMonitor representative for manual inventory assistance.
 
 ---
 
 ## Requirements
 
 - **Python 3.9+**
-- Cloud provider credentials configured (see setup instructions below)
+- Cloud provider credentials configured
 - Read-only permissions (see [docs/PERMISSIONS.md](docs/PERMISSIONS.md))
 
 ---
 
 ## Credential Setup
 
-Before running the inventory tool, you must configure credentials for each cloud provider you want to collect from.
+Configure credentials for each cloud provider before running the inventory.
 
 ### AWS Credentials
 
 **Option 1: AWS CLI (Recommended)**
 
-1. Install the AWS CLI: [AWS CLI Installation Guide](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
+```bash
+# Install AWS CLI and configure
+aws configure
 
-2. Configure credentials:
-   ```bash
-   aws configure
-   ```
-   Enter your Access Key ID, Secret Access Key, and default region when prompted.
-
-3. Verify setup:
-   ```bash
-   aws sts get-caller-identity
-   ```
+# Verify
+aws sts get-caller-identity
+```
 
 **Option 2: Environment Variables**
 
@@ -107,24 +208,12 @@ export AWS_DEFAULT_REGION="us-east-1"
 
 **Option 3: Named Profiles**
 
-If you have multiple AWS accounts, use named profiles in `~/.aws/credentials`:
-
-```ini
-[default]
-aws_access_key_id = YOUR_DEFAULT_KEY
-aws_secret_access_key = YOUR_DEFAULT_SECRET
-
-[production]
-aws_access_key_id = YOUR_PROD_KEY
-aws_secret_access_key = YOUR_PROD_SECRET
+```bash
+# Use a specific profile
+lmci run -p aws --profile production
 ```
 
-Then run with: `python -m src.cli run -p aws --profile production`
-
-**AWS Resources:**
-- [Configuration and credential file settings](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html)
-- [Named profiles](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-profiles.html)
-- [IAM credentials best practices](https://docs.aws.amazon.com/IAM/latest/UserGuide/best-practices.html)
+**Resources:** [AWS CLI Configuration](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html)
 
 ---
 
@@ -132,45 +221,23 @@ Then run with: `python -m src.cli run -p aws --profile production`
 
 **Option 1: Azure CLI (Recommended)**
 
-1. Install the Azure CLI: [Azure CLI Installation Guide](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli)
+```bash
+# Sign in
+az login
 
-2. Sign in to Azure:
-   ```bash
-   az login
-   ```
-   A browser window will open for authentication.
-
-3. Verify setup and list subscriptions:
-   ```bash
-   az account list --output table
-   ```
-
-4. (Optional) Set a default subscription:
-   ```bash
-   az account set --subscription "Your Subscription Name"
-   ```
+# Verify
+az account list --output table
+```
 
 **Option 2: Service Principal**
 
-For automation or when browser login isn't available:
+```bash
+export AZURE_CLIENT_ID="appId"
+export AZURE_CLIENT_SECRET="password"
+export AZURE_TENANT_ID="tenant"
+```
 
-1. Create a service principal:
-   ```bash
-   az ad sp create-for-rbac --name "LMInventory" --role "Reader" \
-     --scopes /subscriptions/<subscription-id>
-   ```
-
-2. Set environment variables with the output:
-   ```bash
-   export AZURE_CLIENT_ID="appId-from-output"
-   export AZURE_CLIENT_SECRET="password-from-output"
-   export AZURE_TENANT_ID="tenant-from-output"
-   ```
-
-**Azure Resources:**
-- [Sign in with Azure CLI](https://learn.microsoft.com/en-us/cli/azure/authenticate-azure-cli)
-- [Create a service principal](https://learn.microsoft.com/en-us/cli/azure/create-an-azure-service-principal-azure-cli)
-- [Azure RBAC built-in roles](https://learn.microsoft.com/en-us/azure/role-based-access-control/built-in-roles)
+**Resources:** [Azure CLI Authentication](https://learn.microsoft.com/en-us/cli/azure/authenticate-azure-cli)
 
 ---
 
@@ -178,92 +245,48 @@ For automation or when browser login isn't available:
 
 **Option 1: gcloud CLI (Recommended)**
 
-1. Install the gcloud CLI: [Google Cloud CLI Installation Guide](https://cloud.google.com/sdk/docs/install)
+```bash
+# Initialize and authenticate
+gcloud init
+gcloud auth application-default login
 
-2. Initialize and authenticate:
-   ```bash
-   gcloud init
-   ```
-   Follow the prompts to select your project and authenticate.
-
-3. Set application default credentials:
-   ```bash
-   gcloud auth application-default login
-   ```
-
-4. Verify setup:
-   ```bash
-   gcloud config list
-   ```
+# Verify
+gcloud config list
+```
 
 **Option 2: Service Account Key**
 
-For automation or non-interactive use:
+```bash
+export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account-key.json"
+```
 
-1. Create a service account in the [GCP Console](https://console.cloud.google.com/iam-admin/serviceaccounts)
+The tool will automatically extract the `project_id` from the service account JSON file.
 
-2. Grant the **Cloud Asset Viewer** role
-
-3. Create and download a JSON key file
-
-4. Set the environment variable:
-   ```bash
-   export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account-key.json"
-   ```
-
-**GCP Resources:**
-- [Installing Google Cloud CLI](https://cloud.google.com/sdk/docs/install)
-- [Application Default Credentials](https://cloud.google.com/docs/authentication/application-default-credentials)
-- [Creating service account keys](https://cloud.google.com/iam/docs/keys-create-delete)
+**Resources:** [GCP Application Default Credentials](https://cloud.google.com/docs/authentication/application-default-credentials)
 
 ---
 
 ### OCI Credentials
 
-**Option 1: OCI CLI Configuration (Recommended)**
+**Option 1: OCI CLI (Recommended)**
 
-1. Install the OCI CLI: [OCI CLI Installation Guide](https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/cliinstall.htm)
+```bash
+# Run setup wizard
+oci setup config
 
-2. Run the setup wizard:
-   ```bash
-   oci setup config
-   ```
-   This will prompt you for:
-   - User OCID (found in OCI Console → Profile → User Settings)
-   - Tenancy OCID (found in OCI Console → Profile → Tenancy)
-   - Region identifier (e.g., `us-phoenix-1`)
-   - Generate a new API key pair (recommended)
-
-3. Upload the public key to your OCI user profile
-
-4. Verify setup:
-   ```bash
-   oci iam region list
-   ```
-
-**Configuration File Location:** `~/.oci/config`
-
-Example config file:
-
-```ini
-[DEFAULT]
-user=ocid1.user.oc1..aaaaaaaxxxxxxxxxx
-fingerprint=aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99
-tenancy=ocid1.tenancy.oc1..aaaaaaaxxxxxxxxxx
-region=us-phoenix-1
-key_file=~/.oci/oci_api_key.pem
+# Verify
+oci iam region list
 ```
 
-**OCI Resources:**
-- [OCI CLI Quickstart](https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/cliinstall.htm)
-- [Required Keys and OCIDs](https://docs.oracle.com/en-us/iaas/Content/API/Concepts/apisigningkey.htm)
-- [Managing API Keys](https://docs.oracle.com/en-us/iaas/Content/Identity/Tasks/managingcredentials.htm)
+Configuration is stored in `~/.oci/config`.
+
+**Resources:** [OCI CLI Quickstart](https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/cliinstall.htm)
 
 ---
 
 ## Running in Cloud Shell
 
-Each cloud provider offers a browser-based shell with credentials pre-configured. **This is the fastest way to run the inventory tool** - no local setup required.
+Each cloud provider offers a browser-based shell with credentials pre-configured - **the fastest way to run the inventory tool**.
 
 | Provider | Cloud Shell | Notes |
 |----------|-------------|-------|
@@ -274,85 +297,30 @@ Each cloud provider offers a browser-based shell with credentials pre-configured
 
 ---
 
-## Detailed Usage
-
-### AWS
-
-```bash
-# Single account
-python -m src.cli run -p aws -o aws_summary.csv
-
-# With specific profile
-python -m src.cli run -p aws --profile myprofile -o aws_summary.csv
-
-# AWS Organizations (multi-account)
-python -m src.cli collect -p aws --organization OrganizationAccountAccessRole -o aws_inventory.json
-```
-
-**Required Permissions:**
-- `resource-explorer-2:Search`, `resource-explorer-2:ListViews` (if using Resource Explorer)
-- Or `ReadOnlyAccess` policy for fallback mode
-
-**Note:** For best performance, enable [AWS Resource Explorer](https://docs.aws.amazon.com/resource-explorer/) with an aggregator index.
-
-### Azure
-
-```bash
-# All subscriptions
-python -m src.cli run -p azure -o azure_summary.csv
-
-# Specific subscriptions
-python -m src.cli run -p azure -s "subscription-id-1" -s "subscription-id-2" -o azure_summary.csv
-```
-
-**Required Permissions:** `Reader` role at subscription or management group level.
-
-### GCP
-
-```bash
-# Single project
-python -m src.cli run -p gcp --project my-project -o gcp_summary.csv
-
-# Organization-wide
-python -m src.cli run -p gcp --organization 123456789 -o gcp_summary.csv
-```
-
-**Required Permissions:** `roles/cloudasset.viewer`
-
-### OCI
-
-```bash
-# Tenancy-wide
-python -m src.cli run -p oci -o oci_summary.csv
-
-# Specific compartment
-python -m src.cli run -p oci --compartment ocid1.compartment.oc1..xxx -o oci_summary.csv
-```
-
-**Required Permissions:** `Allow group <group> to inspect all-resources in tenancy`
-
----
-
 ## Output Files
 
 ### Summary CSV
 
+The default output includes resource type breakdown by category:
+
 ```csv
-Provider,Category,Count
-aws,IaaS,150
-aws,PaaS,75
-aws,Non-Compute,425
+Provider,Account,Category,ResourceType,Region,Count
+aws,123456789012,IaaS,ec2:instance,us-east-1,42
+aws,123456789012,IaaS,ec2:instance,us-west-2,15
+aws,123456789012,PaaS,lambda:function,us-east-1,28
+
+TOTAL,,IaaS,,,57
+TOTAL,,PaaS,,,28
+TOTAL,,Non-Compute,,,125
 ```
 
 ### Detailed CSV (with `-d` flag)
 
-```csv
-Provider,Account,Region,ResourceType,Category,Count
-aws,123456789012,us-east-1,AWS::EC2::Instance,IaaS,42
-aws,123456789012,us-east-1,AWS::Lambda::Function,PaaS,15
-```
+Same as summary but saved to a separate `_detailed.csv` file.
 
 ### Raw Inventory JSON
+
+The `_inventory.json` file contains raw resource data for analysis:
 
 ```json
 [
@@ -360,7 +328,7 @@ aws,123456789012,us-east-1,AWS::Lambda::Function,PaaS,15
     "provider": "aws",
     "account_id": "123456789012",
     "region": "us-east-1",
-    "resource_type": "AWS::EC2::Instance",
+    "resource_type": "ec2:instance",
     "count": 42,
     "timestamp": "2024-12-22T10:30:00Z"
   }
@@ -369,170 +337,94 @@ aws,123456789012,us-east-1,AWS::Lambda::Function,PaaS,15
 
 ---
 
-## Architecture
-
-The tool is designed with separation of concerns:
-
-1. **Data Collection** - Provider-specific collectors gather resource counts
-2. **Configuration** - JSON files define resource-to-category mappings
-3. **Calculation** - License calculator processes inventory and applies rules
-4. **Output** - Unified CSV/JSON output format
-
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed technical documentation.
-
----
-
-## Configuration
-
-### Resource Mappings
-
-Resource type to category mappings are defined in `config/resource_mappings.json`. Add new resource types here without modifying code.
-
-### License Rules
-
-Calculation rules are defined in `config/license_rules.json`, including:
-- Category definitions
-- No-charge resources
-- Special counting rules
-
----
-
-## Kubernetes Resource Counting
-
-For Kubernetes-based services (EKS, AKS, GKE), LogicMonitor counts K8s pods as the billable unit when using LM Container monitoring.
-
-To get pod counts for each cluster:
-
-```bash
-kubectl get pods --all-namespaces --no-headers -o custom-columns=Type:kind | sort | uniq -c
-```
-
----
-
-## CLI Reference
-
-```bash
-# Show all commands
-python -m src.cli --help
-
-# Collect resources
-python -m src.cli collect --help
-
-# Calculate licenses
-python -m src.cli calculate --help
-
-# Run both steps
-python -m src.cli run --help
-
-# Show required permissions
-python -m src.cli permissions -p aws
-```
-
----
-
 ## Troubleshooting
 
 ### AWS: "Resource Explorer not enabled"
 
-The tool will fall back to direct API calls (slower). For best performance:
-1. Enable AWS Resource Explorer in your account
-2. Create an aggregator index for cross-region queries
+AWS Resource Explorer is required. Enable it in your account:
+1. Go to [AWS Resource Explorer Console](https://console.aws.amazon.com/resource-explorer/)
+2. Enable Resource Explorer
+3. Create an aggregator index for cross-region queries
 
-### AWS: "Access Denied" or "UnauthorizedAccess"
+### AWS: "Access Denied"
 
-1. Verify your credentials are configured:
-   ```bash
-   aws sts get-caller-identity
-   ```
+```bash
+# Verify credentials
+aws sts get-caller-identity
+```
 
-2. Check that your IAM user/role has the required permissions (see [docs/PERMISSIONS.md](docs/PERMISSIONS.md))
+Check [docs/PERMISSIONS.md](docs/PERMISSIONS.md) for required IAM permissions.
 
 ### Azure: "AuthorizationFailed"
 
-1. Ensure you're logged in:
-   ```bash
-   az account show
-   ```
+```bash
+# Verify login
+az account show
+```
 
-2. Verify you have the `Reader` role assigned:
-   ```bash
-   az role assignment list --assignee $(az account show --query user.name -o tsv)
-   ```
+Ensure you have the `Reader` role on the subscription(s).
 
 ### GCP: "Permission denied"
 
-1. Verify authentication:
-   ```bash
-   gcloud auth list
-   ```
+```bash
+# Verify auth
+gcloud auth list
+```
 
-2. Check Cloud Asset Viewer role:
-   ```bash
-   gcloud projects get-iam-policy <project-id> --filter="bindings.role:cloudasset.viewer"
-   ```
+Ensure you have the `roles/cloudasset.viewer` role.
 
 ### OCI: "NotAuthorizedOrNotFound"
 
-1. Verify your config file:
-   ```bash
-   cat ~/.oci/config
-   ```
+```bash
+# Verify config
+cat ~/.oci/config
+```
 
-2. Check policy:
-   ```bash
-   oci iam policy list --compartment-id <tenancy-ocid> --all
-   ```
+Ensure the policy allows: `Allow group <group> to inspect all-resources in tenancy`
 
 ### General: "ModuleNotFoundError"
 
-Install the required dependencies:
 ```bash
-pip install -r requirements.txt
+pip install .
 ```
 
 ---
 
-## Security
+## Security & Privacy
 
-- **Read-only access only** - No write, modify, or delete operations
-- **No credential storage** - Uses provider credential chains
-- **No external network calls** - Only communicates with cloud provider APIs
-- **Audit-friendly output** - Review JSON/CSV before sharing
+**Security:**
+- Read-only access only - no write/modify/delete operations
+- Uses provider credential chains - no credential storage
+- Only communicates with cloud provider APIs
 
----
-
-## Data Privacy
-
-**The tool collects:**
+**Data Collected:**
 - Resource type counts
 - Account/subscription identifiers
 - Region/location information
 
-**The tool does NOT collect:**
-- Resource names or IDs (unless using detailed mode)
+**NOT Collected:**
+- Resource names or IDs
 - Resource content or data
 - Configuration details
 - Credentials or secrets
 
 ---
 
+## Documentation
+
+- [Required Permissions](docs/PERMISSIONS.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [LogicMonitor Cloud Services](https://www.logicmonitor.com/support/cloud-services-and-resource-units)
+
+---
+
 ## Support
 
-For questions or issues:
 - **Pre-sales:** Contact your LogicMonitor Sales Engineer
 - **Customers:** Contact your Customer Success Manager
 
 ---
 
-## Documentation
-
-- [Supported Resources](docs/SUPPORTED_RESOURCES.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [Required Permissions](docs/PERMISSIONS.md)
-- [LogicMonitor Cloud Services Documentation](https://www.logicmonitor.com/support/cloud-services-and-resource-units)
-
----
-
 ## License
 
-MIT License - See LICENSE file for details.
+MIT License - See [LICENSE](LICENSE) file for details.

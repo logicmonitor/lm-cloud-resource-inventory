@@ -67,15 +67,35 @@ class GCPCollector(BaseCollector):
         elif self.project_id:
             return f"projects/{self.project_id}"
         else:
-            # Try to get default project from environment
             import os
+            import json
+
+            # Try environment variables first
             project = os.environ.get('GOOGLE_CLOUD_PROJECT') or os.environ.get('GCLOUD_PROJECT')
+
+            # If not set, try to read from service account credentials file
+            if not project:
+                creds_file = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
+                if creds_file and os.path.exists(creds_file):
+                    try:
+                        with open(creds_file, 'r', encoding='utf-8') as f:
+                            creds = json.load(f)
+                            project = creds.get('project_id')
+                            if project:
+                                logger.info(
+                                    "Using project_id from credentials file: %s", project
+                                )
+                    except (json.JSONDecodeError, IOError):
+                        pass
+
             if project:
                 self.project_id = project
                 return f"projects/{project}"
+
             raise ValueError(
                 "No scope provided. Set project_id, organization_id, or folder_id, "
-                "or set GOOGLE_CLOUD_PROJECT environment variable."
+                "or set GOOGLE_CLOUD_PROJECT environment variable, "
+                "or ensure GOOGLE_APPLICATION_CREDENTIALS points to a valid service account file."
             )
 
     def validate_permissions(self) -> bool:
