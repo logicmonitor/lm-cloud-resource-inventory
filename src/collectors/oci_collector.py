@@ -105,8 +105,15 @@ class OCICollector(BaseCollector):
         try:
             import oci
 
+            # Log config being used
+            logger.info("Using OCI config profile: %s", self.config_profile)
+
             search_client = self._get_search_client()
             compartment = self._get_root_compartment()
+
+            # Log tenancy context
+            tenancy_id = self._get_tenancy_id()
+            logger.info("Tenancy: %s", tenancy_id)
 
             # Try a simple search to verify access
             search_details = oci.resource_search.models.StructuredSearchDetails(
@@ -116,7 +123,7 @@ class OCICollector(BaseCollector):
 
             search_client.search_resources(search_details, limit=1)
 
-            logger.info("OCI permissions validated for compartment: %s", compartment)
+            logger.info("OCI permissions validated successfully")
             return True
 
         except Exception as e:
@@ -177,7 +184,7 @@ class OCICollector(BaseCollector):
 
         # Get all compartments to search
         compartments = self._get_all_compartments(root_compartment)
-        logger.info("Searching %d compartments", len(compartments))
+        logger.info("Discovered %d compartments to search", len(compartments))
 
         # Resource types to collect
         resource_types = [

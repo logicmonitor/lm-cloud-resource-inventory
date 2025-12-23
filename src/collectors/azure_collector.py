@@ -39,6 +39,7 @@ class AzureCollector(BaseCollector):
         self._credential = None
         self._graph_client = None
         self._resource_client = None
+        self._subscription_info: List[Dict] = []  # List of {id, name} dicts
 
     def _get_credential(self):
         """Get Azure credential using DefaultAzureCredential."""
@@ -76,15 +77,31 @@ class AzureCollector(BaseCollector):
         if self.subscription_ids:
             return self.subscription_ids
 
-        # Get all accessible subscriptions
+        # Get all accessible subscriptions with names
         try:
             from azure.mgmt.resource import SubscriptionClient
             sub_client = SubscriptionClient(self._get_credential())
             subscriptions = []
+            self._subscription_info = []
+
             for sub in sub_client.subscriptions.list():
                 if sub.state == "Enabled":
                     subscriptions.append(sub.subscription_id)
-            logger.info("Found %d accessible subscriptions", len(subscriptions))
+                    self._subscription_info.append({
+                        'id': sub.subscription_id,
+                        'name': sub.display_name or sub.subscription_id
+                    })
+
+            # Log subscriptions with names
+            if self._subscription_info:
+                sub_names = [s['name'] for s in self._subscription_info]
+                if len(sub_names) <= 5:
+                    logger.info("Found %d subscriptions: %s",
+                                len(subscriptions), ", ".join(sub_names))
+                else:
+                    logger.info("Found %d subscriptions: %s, and %d more",
+                                len(subscriptions), ", ".join(sub_names[:5]), len(sub_names) - 5)
+
             return subscriptions
         except ImportError as exc:
             raise ImportError(
@@ -100,6 +117,12 @@ class AzureCollector(BaseCollector):
             True if permissions are available, False otherwise.
         """
         try:
+            # Get credential and log auth method
+            credential = self._get_credential()
+            # The credential type name indicates the auth method
+            cred_type = type(credential).__name__
+            logger.info("Authenticating via: %s", cred_type)
+
             # Try to list subscriptions to verify access
             subscriptions = self._get_subscriptions()
             if not subscriptions:
@@ -165,9 +188,14 @@ class AzureCollector(BaseCollector):
 
         # Process in batches of 200 subscriptions (Resource Graph limit)
         batch_size = 200
+        total_batches = (len(subscriptions) + batch_size - 1) // batch_size
+
         for i in range(0, len(subscriptions), batch_size):
             batch = subscriptions[i:i + batch_size]
-            logger.info("Querying batch %d (%d subscriptions)", i // batch_size + 1, len(batch))
+            batch_num = i // batch_size + 1
+            if total_batches > 1:
+                logger.info("Querying batch %d of %d (%d subscriptions)",
+                            batch_num, total_batches, len(batch))
 
             query = QueryRequest(
                 subscriptions=batch,

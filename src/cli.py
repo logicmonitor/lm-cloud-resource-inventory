@@ -11,6 +11,8 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from . import __version__
+
 try:
     import click
     from rich.console import Console
@@ -24,16 +26,35 @@ console = Console()
 
 def setup_logging(verbose: bool = False):
     """Configure logging with rich output."""
-    level = logging.DEBUG if verbose else logging.INFO
-    logging.basicConfig(
-        level=level,
-        format="%(message)s",
-        handlers=[RichHandler(console=console, rich_tracebacks=True)]
-    )
+    # Configure our application logger only (not root logger)
+    app_logger = logging.getLogger('src')
+    app_logger.setLevel(logging.DEBUG if verbose else logging.INFO)
+
+    # Add rich handler if not already added
+    if not app_logger.handlers:
+        handler = RichHandler(
+            console=console,
+            rich_tracebacks=True,
+            omit_repeated_times=False  # Show timestamp on every log line
+        )
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        app_logger.addHandler(handler)
+
+    # Suppress noisy third-party SDK loggers
+    noisy_loggers = [
+        'azure', 'azure.core', 'azure.identity', 'azure.mgmt',
+        'urllib3', 'msrest', 'msal',
+        'boto3', 'botocore', 's3transfer',
+        'google', 'google.auth', 'google.cloud',
+        'oci',
+        'httpx', 'httpcore'
+    ]
+    for logger_name in noisy_loggers:
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
 
 
 @click.group()
-@click.version_option(version="2.0.0")
+@click.version_option(version=__version__)
 @click.option('--verbose', '-v', is_flag=True, help='Enable verbose logging')
 def cli(verbose: bool):
     """
@@ -74,19 +95,19 @@ def collect(
     
     Examples:
     
-      lm-inventory collect -p aws -o aws_inventory.json
+      lm-cloud-inventory collect -p aws -o aws_inventory.json
       
-      lm-inventory collect -p azure -s sub-id-1 -s sub-id-2
+      lm-cloud-inventory collect -p azure -s sub-id-1 -s sub-id-2
       
-      lm-inventory collect -p gcp --project my-project
+      lm-cloud-inventory collect -p gcp --project my-project
       
-      lm-inventory collect -p oci --compartment ocid.compartment...
+      lm-cloud-inventory collect -p oci --compartment ocid.compartment...
     """
     console.print(f"\n[bold blue]Collecting {provider.upper()} resources...[/bold blue]\n")
 
     try:
         if provider == 'aws':
-            from collectors import collect_aws
+            from .collectors import collect_aws
 
             use_org = bool(organization)
             collect_aws(
@@ -98,7 +119,7 @@ def collect(
             )
 
         elif provider == 'azure':
-            from collectors import collect_azure
+            from .collectors import collect_azure
 
             subscription_ids = list(subscription) if subscription else None
             collect_azure(
@@ -107,7 +128,7 @@ def collect(
             )
 
         elif provider == 'gcp':
-            from collectors import collect_gcp
+            from .collectors import collect_gcp
 
             collect_gcp(
                 project_id=project,
@@ -116,7 +137,7 @@ def collect(
             )
 
         elif provider == 'oci':
-            from collectors import collect_oci
+            from .collectors import collect_oci
 
             collect_oci(
                 compartment_id=compartment,
@@ -124,7 +145,7 @@ def collect(
             )
 
         console.print(f"\n[green]✓ Inventory saved to {output}[/green]")
-        console.print(f"[dim]Run 'lm-inventory calculate -i {output}' to generate license summary[/dim]\n")
+        console.print(f"[dim]Run 'lm-cloud-inventory calculate -i {output}' to generate license summary[/dim]\n")
 
     except ImportError as e:
         console.print(f"[red]Missing dependency: {e}[/red]")
@@ -162,14 +183,14 @@ def calculate(
     
     Examples:
     
-      lm-inventory calculate -i inventory.json -o summary.csv
+      lm-cloud-inventory calculate -i inventory.json -o summary.csv
       
-      lm-inventory calculate -i inventory.json -d --show-unsupported
+      lm-cloud-inventory calculate -i inventory.json -d --show-unsupported
     """
     console.print("\n[bold blue]Calculating license requirements...[/bold blue]\n")
 
     try:
-        from calculator import LicenseCalculator
+        from .calculator import LicenseCalculator
 
         # Load inventory
         with open(input_path, 'r', encoding='utf-8') as f:
@@ -239,9 +260,9 @@ def run(
     
     Examples:
     
-      lm-inventory run -p aws -o aws_summary.csv
+      lm-cloud-inventory run -p aws -o aws_summary.csv
       
-      lm-inventory run -p azure -d
+      lm-cloud-inventory run -p azure -d
     """
     import tempfile
 
@@ -256,24 +277,24 @@ def run(
 
         # Run collection
         if provider == 'aws':
-            from collectors import collect_aws
+            from .collectors import collect_aws
             inventory = collect_aws(profile=profile, output_path=temp_inventory)
 
         elif provider == 'azure':
-            from collectors import collect_azure
+            from .collectors import collect_azure
             subscription_ids = list(subscription) if subscription else None
             inventory = collect_azure(subscriptions=subscription_ids, output_path=temp_inventory)
 
         elif provider == 'gcp':
-            from collectors import collect_gcp
+            from .collectors import collect_gcp
             inventory = collect_gcp(project_id=project, output_path=temp_inventory)
 
         elif provider == 'oci':
-            from collectors import collect_oci
+            from .collectors import collect_oci
             inventory = collect_oci(compartment_id=compartment, output_path=temp_inventory)
 
         # Calculate licenses
-        from calculator import LicenseCalculator
+        from .calculator import LicenseCalculator
 
         calculator = LicenseCalculator.from_config_files()
         results = calculator.calculate(inventory)

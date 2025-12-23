@@ -89,6 +89,14 @@ class GCPCollector(BaseCollector):
             client = self._get_client()
             scope = self._get_scope()
 
+            # Log the scope being used
+            if self.organization_id:
+                logger.info("Scope: Organization %s", self.organization_id)
+            elif self.folder_id:
+                logger.info("Scope: Folder %s", self.folder_id)
+            elif self.project_id:
+                logger.info("Scope: Project %s", self.project_id)
+
             # Try a simple asset search to verify access
             from google.cloud import asset_v1
 
@@ -101,7 +109,7 @@ class GCPCollector(BaseCollector):
             results = client.search_all_resources(request)
             next(iter(results), None)  # Get first result or None
 
-            logger.info("GCP permissions validated for scope: %s", scope)
+            logger.info("GCP permissions validated successfully")
             return True
 
         except Exception as e:
@@ -139,8 +147,11 @@ class GCPCollector(BaseCollector):
 
         # Count resources by type and location
         resource_counts = {}
+        total_resources = 0
+        projects_seen = set()
 
         try:
+            logger.info("Scanning resources...")
             for resource in client.search_all_resources(request):
                 # Extract resource type from asset_type
                 # Format: servicename.googleapis.com/ResourceType
@@ -150,12 +161,19 @@ class GCPCollector(BaseCollector):
                 # Format: //servicename.googleapis.com/projects/PROJECT_ID/...
                 name = resource.name
                 project = self._extract_project_from_name(name)
+                if project:
+                    projects_seen.add(project)
 
                 # Get location
                 location = resource.location or 'global'
 
                 key = (asset_type, project, location)
                 resource_counts[key] = resource_counts.get(key, 0) + 1
+                total_resources += 1
+
+            if projects_seen:
+                logger.info("Scanned %d resources across %d projects",
+                            total_resources, len(projects_seen))
 
         except Exception as e:
             logger.error("Error during resource collection: %s", e)

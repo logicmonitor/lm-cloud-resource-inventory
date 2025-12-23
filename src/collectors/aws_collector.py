@@ -7,6 +7,21 @@ from .base import BaseCollector
 
 logger = logging.getLogger(__name__)
 
+# Services NOT supported by AWS Resource Explorer (as of Dec 2024)
+# These require manual inventory if used. See README.md for details.
+# Reference: https://docs.aws.amazon.com/resource-explorer/latest/userguide/supported-resource-types.html
+UNSUPPORTED_SERVICES = [
+    "CloudSearch (Domain)",
+    "MediaConnect (Flow)",
+    "MediaConvert (Queue)",
+    "OpsWorks (Stack)",
+    "Q Business (Application)",
+    "QuickSight (Dashboard only - dataset/datasource are supported)",
+    "Simple Workflow SWF (Domain)",
+    "Application Migration Service (Source Server)",
+    "ElasticTranscoder (Pipeline)",
+]
+
 
 class AWSCollector(BaseCollector):
     """
@@ -90,33 +105,38 @@ class AWSCollector(BaseCollector):
         try:
             session = self._get_default_session()
 
+            # Log profile being used
+            if self.profile_name:
+                logger.info("Using AWS profile: %s", self.profile_name)
+
             # Verify identity
             sts = session.client('sts')
             identity = sts.get_caller_identity()
             self._account_id = identity['Account']
-            logger.info("AWS identity: %s", identity['Arn'])
+            logger.info("Authenticated as: %s", identity['Arn'])
 
-            # Check if Resource Explorer is available
+            # Check if Resource Explorer is available (required)
             rex = session.client('resource-explorer-2')
 
             try:
                 # Try to list indexes to verify Resource Explorer is enabled
                 indexes = rex.list_indexes()
                 if not indexes.get('Indexes'):
-                    logger.warning(
+                    logger.error(
                         "AWS Resource Explorer is not enabled. "
-                        "Please enable it for faster inventory collection. "
-                        "Falling back to direct API calls."
+                        "This tool requires Resource Explorer to collect resources. "
+                        "Please enable it: https://docs.aws.amazon.com/resource-explorer/"
                     )
-                    return True  # Still allow collection via fallback
+                    return False
 
                 logger.info("AWS Resource Explorer is enabled")
                 return True
 
             except rex.exceptions.AccessDeniedException:
-                logger.warning(
+                logger.error(
                     "No access to Resource Explorer. "
-                    "Ensure the IAM policy includes resource-explorer-2:* permissions."
+                    "Ensure the IAM policy includes resource-explorer-2:* permissions. "
+                    "See: https://docs.aws.amazon.com/resource-explorer/"
                 )
                 return False
 
@@ -136,24 +156,6 @@ class AWSCollector(BaseCollector):
             sts = session.client('sts')
             self._account_id = sts.get_caller_identity()['Account']
         return self._account_id
-
-    def _is_resource_explorer_enabled(self, session) -> bool:
-        """Check if Resource Explorer is enabled and has an aggregator index."""
-        try:
-            rex = session.client('resource-explorer-2')
-            indexes = rex.list_indexes()
-
-            # Check for an aggregator index
-            for index in indexes.get('Indexes', []):
-                if index.get('Type') == 'AGGREGATOR':
-                    return True
-
-            # If no aggregator, check for any local indexes
-            return len(indexes.get('Indexes', [])) > 0
-
-        except Exception as e:
-            logger.debug("Resource Explorer check failed: %s", e)
-            return False
 
     def _collect_via_resource_explorer(self, session, account_id: str) -> List[Dict]:
         """
@@ -194,98 +196,6 @@ class AWSCollector(BaseCollector):
             logger.error("Resource Explorer search failed: %s", e)
 
         return inventory
-
-    def _collect_via_direct_apis(self, session, account_id: str) -> List[Dict]:
-        """
-        Collect resources using direct AWS service APIs.
-        
-        This is the slow fallback path when Resource Explorer is not available.
-        Only collects the most common resource types.
-        """
-        inventory = []
-
-        # Get list of enabled regions
-        ec2 = session.client('ec2', region_name='us-east-1')
-        regions = [r['RegionName'] for r in ec2.describe_regions()['Regions']]
-
-        logger.warning(
-            "Using direct API calls (slower). Scanning %d regions. This may take a while...",
-            len(regions)
-        )
-
-        # Collect S3 (global service)
-        try:
-            s3 = session.client('s3')
-            buckets = s3.list_buckets().get('Buckets', [])
-            if buckets:
-                record = self.create_inventory_record(
-                    account_id=account_id,
-                    region='global',
-                    resource_type='AWS::S3::Bucket',
-                    count=len(buckets)
-                )
-                inventory.append(record)
-        except Exception as e:
-            logger.debug("S3 collection failed: %s", e)
-
-        # Collect regional services
-        for region in regions:
-            logger.debug("Scanning region: %s", region)
-
-            # EC2 Instances
-            try:
-                ec2 = session.client('ec2', region_name=region)
-                reservations = ec2.describe_instances().get('Reservations', [])
-                count = sum(len(r.get('Instances', [])) for r in reservations)
-                if count > 0:
-                    record = self.create_inventory_record(
-                        account_id=account_id,
-                        region=region,
-                        resource_type='AWS::EC2::Instance',
-                        count=count
-                    )
-                    inventory.append(record)
-            except Exception as e:
-                logger.debug("EC2 collection failed in %s: %s", region, e)
-
-            # Lambda Functions
-            try:
-                lam = session.client('lambda', region_name=region)
-                functions = lam.list_functions().get('Functions', [])
-                if functions:
-                    record = self.create_inventory_record(
-                        account_id=account_id,
-                        region=region,
-                        resource_type='AWS::Lambda::Function',
-                        count=len(functions)
-                    )
-                    inventory.append(record)
-            except Exception as e:
-                logger.debug("Lambda collection failed in %s: %s", region, e)
-
-            # RDS Instances
-            try:
-                rds = session.client('rds', region_name=region)
-                instances = rds.describe_db_instances().get('DBInstances', [])
-                if instances:
-                    record = self.create_inventory_record(
-                        account_id=account_id,
-                        region=region,
-                        resource_type='AWS::RDS::DBInstance',
-                        count=len(instances)
-                    )
-                    inventory.append(record)
-            except Exception as e:
-                logger.debug("RDS collection failed in %s: %s", region, e)
-
-        return inventory
-
-    def _count_ec2_instances(self, response) -> int:
-        """Count EC2 instances from describe_instances response."""
-        count = 0
-        for reservation in response.get('Reservations', []):
-            count += len(reservation.get('Instances', []))
-        return count
 
     def _get_org_accounts(self) -> List[Dict]:
         """Get all accounts in the organization."""
@@ -362,6 +272,7 @@ class AWSCollector(BaseCollector):
             # Single account collection
             session = self._get_default_session()
             account_id = self.get_account_id()
+            logger.info("Collecting from account: %s", account_id)
             all_inventory = self._collect_from_account(session, account_id)
 
         self._inventory = all_inventory
@@ -370,13 +281,9 @@ class AWSCollector(BaseCollector):
         return all_inventory
 
     def _collect_from_account(self, session, account_id: str) -> List[Dict]:
-        """Collect resources from a single AWS account."""
-        if self._is_resource_explorer_enabled(session):
-            logger.info("Using Resource Explorer for account %s", account_id)
-            return self._collect_via_resource_explorer(session, account_id)
-        else:
-            logger.info("Using direct APIs for account %s (Resource Explorer not enabled)", account_id)
-            return self._collect_via_direct_apis(session, account_id)
+        """Collect resources from a single AWS account using Resource Explorer."""
+        logger.info("Querying Resource Explorer for account %s", account_id)
+        return self._collect_via_resource_explorer(session, account_id)
 
 
 def collect_aws(
