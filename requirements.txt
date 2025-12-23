@@ -1,0 +1,24 @@
+# LM Cloud Resource Inventory - Dependencies
+# Python 3.9+ required
+
+# AWS SDK
+boto3>=1.42.15
+
+# Azure SDK
+azure-identity>=1.25.1
+azure-mgmt-resourcegraph>=8.0.1
+azure-mgmt-resource>=24.0.0
+
+# GCP SDK
+google-cloud-asset>=4.1.0
+
+# OCI SDK
+oci>=2.164.2
+
+# CLI and utilities
+click>=8.3.1
+rich>=14.2.0
+
+# Data processing
+pandas>=2.3.3
+

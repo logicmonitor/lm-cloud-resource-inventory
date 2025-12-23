@@ -1,204 +1,538 @@
 # LM Cloud Resource Inventory
 
-## *What is the purpose of the LM Cloud Resource Inventory scripts?*
+A unified solution for collecting cloud resource counts across AWS, Azure, GCP, and OCI for LogicMonitor licensing purposes.
 
-This solution is provided by LogicMonitor in order to collect cloud resource counts within an AWS or Azure environment, for LogicMonitor licensing.
+## Overview
 
-## *What data is collected by the LM Cloud Resource Inventory scripts?*
+This tool collects resource inventory from cloud providers and calculates LogicMonitor license requirements by categorizing resources into:
 
-The LM Cloud Resource Inventory script records the associated quantity of services/resources based on LM Cloud resource type (IaaS, PaaS, Non-Compute.)
-* By default, no other data associated with cloud resources is collected or recorded (for example, resource name or ID, unless instructed using the *-DetailedResults* parameter.) 
-* The output of the script is visible to customers for review, prior to sharing with LogicMonitor.
+- **IaaS** - Virtual machines and compute instances
+- **PaaS** - Managed services, containers, serverless functions
+- **Non-Compute** - Storage, networking, and other infrastructure resources
 
-## *How will LogicMonitor use this data?*
+## Quick Start
 
-The data collected will be used to accurately scope the quantity of LogicMonitor cloud resource licenses required for quoting. For example, the scripts will return the total number of IaaS or PaaS resources in an AWS account or Azure subscription.
+### Installation
 
-## *What language are these scripts written in?*
+```bash
+# Clone the repository
+git clone https://github.com/logicmonitor/lm-cloud-resource-inventory.git
+cd lm-cloud-resource-inventory
 
-The scripts provided are PowerShell scripts that LogicMonitor recommends executing at the cloud provider CLI.
+# Install dependencies
+pip install -r requirements.txt
+```
 
-## *Where should I execute these scripts in order to successfully collect data?*
+### Basic Usage
 
-In order to minimize setup requirements, and for purposes of expediency, LogicMonitor recommends execution of the scripts in the relevant cloud provider CLI.
+```bash
+# Collect and calculate in one step
+python -m src.cli run -p aws -o aws_summary.csv
+python -m src.cli run -p azure -o azure_summary.csv
+python -m src.cli run -p gcp -o gcp_summary.csv
+python -m src.cli run -p oci -o oci_summary.csv
 
-For users with advanced cloud experience, the scripts can also be executed from a local workstation with the AWS or Azure pre-reqs installed.
+# Or collect and calculate separately
+python -m src.cli collect -p aws -o aws_inventory.json
+python -m src.cli calculate -i aws_inventory.json -o aws_summary.csv
+```
+
+## Supported Cloud Providers
+
+| Provider | API Used | Performance |
+|----------|----------|-------------|
+| **AWS** | AWS Resource Explorer | ~2-5 minutes |
+| **Azure** | Azure Resource Graph | ~1-2 minutes |
+| **GCP** | Cloud Asset Inventory | ~1-2 minutes |
+| **OCI** | OCI Search Service | ~1 minute |
+
+For a complete list of supported resources, see [docs/SUPPORTED_RESOURCES.md](https://www.logicmonitor.com/support/cloud-services-and-resource-units).
+
+### AWS Resource Explorer Limitations
+
+The following AWS services are **not supported** by AWS Resource Explorer and will not be collected:
+
+| Service | Resource Type |
+|---------|---------------|
+| CloudSearch | Domain |
+| MediaConnect | Flow |
+| MediaConvert | Queue |
+| OpsWorks | Stack |
+| Q Business | Application |
+| QuickSight | Dashboard (dataset/datasource are supported) |
+| Simple Workflow (SWF) | Domain |
+| Application Migration Service | Source Server |
+| ElasticTranscoder | Pipeline |
+
+These are generally legacy services or very new services. If you have significant usage of these services, please contact your LogicMonitor representative for manual inventory assistance.
+
+---
 
 ## Requirements
 
-**Note:**  Cloud provider CLIs have all required dependencies already installed.
+- **Python 3.9+**
+- Cloud provider credentials configured (see setup instructions below)
+- Read-only permissions (see [docs/PERMISSIONS.md](docs/PERMISSIONS.md))
 
-**AWS**
-* PowerShell version 5.1 or later
-* AWS.Tools PowerShell modules - [How to install the AWS.Tools PowerShell module](https://docs.aws.amazon.com/powershell/latest/userguide/pstools-getting-set-up.html)
+---
 
-### Installing AWS.Tools Modules
+## Credential Setup
 
-```powershell
-# Install the AWS.Tools installer first
-Install-Module -Name AWS.Tools.Installer -Force -AllowClobber
+Before running the inventory tool, you must configure credentials for each cloud provider you want to collect from.
 
-# Then install all required modules using the installer
-Install-AWSToolsModule -Name @(
-    'AWS.Tools.Account', 'AWS.Tools.APIGateway', 'AWS.Tools.ApiGatewayV2', 'AWS.Tools.AppStream',
-    'AWS.Tools.Athena', 'AWS.Tools.Backup', 'AWS.Tools.Bedrock', 'AWS.Tools.CloudFront',
-    'AWS.Tools.CloudSearch', 'AWS.Tools.CloudWatch', 'AWS.Tools.DirectConnect', 'AWS.Tools.DocDBElastic',
-    'AWS.Tools.DynamoDBv2', 'AWS.Tools.EC2', 'AWS.Tools.ECS', 'AWS.Tools.ElasticFileSystem', 'AWS.Tools.EKS',
-    'AWS.Tools.ElastiCache', 'AWS.Tools.ElasticBeanstalk', 'AWS.Tools.ElasticLoadBalancing',
-    'AWS.Tools.ElasticLoadBalancingV2', 'AWS.Tools.EMRServerless', 'AWS.Tools.FSx', 'AWS.Tools.Glue',
-    'AWS.Tools.Kafka', 'AWS.Tools.Kinesis', 'AWS.Tools.KinesisFirehose', 'AWS.Tools.KinesisVideo',
-    'AWS.Tools.Lambda', 'AWS.Tools.MediaConnect', 'AWS.Tools.MediaPackage', 'AWS.Tools.MediaPackageVod',
-    'AWS.Tools.MQ', 'AWS.Tools.NetworkManager', 'AWS.Tools.OpenSearchService', 'AWS.Tools.Organizations',
-    'AWS.Tools.QBusiness', 'AWS.Tools.QuickSight', 'AWS.Tools.RDS', 'AWS.Tools.Redshift',
-    'AWS.Tools.RedshiftServerless', 'AWS.Tools.Route53', 'AWS.Tools.S3', 'AWS.Tools.SecurityToken',
-    'AWS.Tools.SimpleEmailV2', 'AWS.Tools.SimpleNotificationService', 'AWS.Tools.SQS', 'AWS.Tools.StepFunctions'
-) -Force
+### AWS Credentials
+
+**Option 1: AWS CLI (Recommended)**
+
+1. Install the AWS CLI: [AWS CLI Installation Guide](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
+
+2. Configure credentials:
+   ```bash
+   aws configure
+   ```
+   Enter your Access Key ID, Secret Access Key, and default region when prompted.
+
+3. Verify setup:
+   ```bash
+   aws sts get-caller-identity
+   ```
+
+**Option 2: Environment Variables**
+
+```bash
+export AWS_ACCESS_KEY_ID="your-access-key"
+export AWS_SECRET_ACCESS_KEY="your-secret-key"
+export AWS_DEFAULT_REGION="us-east-1"
 ```
 
+**Option 3: Named Profiles**
 
-#### Verification
-After installation, you can verify the modules are available:
-```powershell
-# Check if all modules are installed
-Get-Module -ListAvailable AWS.Tools.*
+If you have multiple AWS accounts, use named profiles in `~/.aws/credentials`:
 
-# Test AWS connection
-Get-STSCallerIdentity
+```ini
+[default]
+aws_access_key_id = YOUR_DEFAULT_KEY
+aws_secret_access_key = YOUR_DEFAULT_SECRET
+
+[production]
+aws_access_key_id = YOUR_PROD_KEY
+aws_secret_access_key = YOUR_PROD_SECRET
 ```
 
-**Azure**
-* PowerShell Az module - [How to install the PowerShell Az module](https://learn.microsoft.com/en-us/powershell/azure/install-azps-windows?view=azps-12.3.0&tabs=powershell&pivots=windows-psgallery)
-* PowerShell version 5.1 or later
+Then run with: `python -m src.cli run -p aws --profile production`
 
-## *What permissions are required by the scripts to run against my cloud environments?*
+**AWS Resources:**
+- [Configuration and credential file settings](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html)
+- [Named profiles](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-profiles.html)
+- [IAM credentials best practices](https://docs.aws.amazon.com/IAM/latest/UserGuide/best-practices.html)
 
-The scripts will utilize the permissions of the currently logged-in cloud account, and while the scripts do not execute any write operations against a cloud account, best practice recommendation is to run the scripts with a read-only account.
+---
 
-**AWS**
-* Minimum required role: ReadOnly (best practice is to use an account with only ReadOnly access.)
-* For AWS Organizations:
-  - The role specified in the -AssumeRole parameter must exist in all member accounts and have ReadOnly permissions.
-  - The account running the script must have permission to assume this role in the member accounts.
-  - Recommended to use a dedicated role like "OrganizationAccountAccessRole" with ReadOnly permissions for inventory purposes.
+### Azure Credentials
 
-**Azure**
-* Minimum required role: Reader (best practice is to use an account with only Reader access.)
+**Option 1: Azure CLI (Recommended)**
 
-## *Does the script make any connections, other than to AWS or Azure?*
+1. Install the Azure CLI: [Azure CLI Installation Guide](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli)
 
-No, the script(s) don’t establish any external connections, they simply query Azure and AWS, and write output to a .csv file.
+2. Sign in to Azure:
+   ```bash
+   az login
+   ```
+   A browser window will open for authentication.
 
-## *How long should it take to run these scripts?*
+3. Verify setup and list subscriptions:
+   ```bash
+   az account list --output table
+   ```
 
-**AWS**
-* The AWS script execution time can vary significantly:
-  - It may take up to an hour to complete, as it checks each service in every region for accessible resources.
-  - By default, the script includes all AWS regions in its scan.
-  - To reduce the overall runtime, it's recommended to use the *-Regions* parameter. This allows you to limit the scope to only the regions you actively use.
-* For AWS Organizations users:
-  - The script can inventory resources across multiple accounts within an Organizational Unit (OU).
-  - Use the *-OrganizationalUnitId* parameter to specify the OU you want to inventory.
-  - The *-AssumeRole* parameter allows the script to access member accounts securely.
-  - This feature enables a comprehensive inventory across your entire AWS organization structure.
+4. (Optional) Set a default subscription:
+   ```bash
+   az account set --subscription "Your Subscription Name"
+   ```
 
-**Azure**
-* Depending on how many subscriptions are being counted the script typically takes around 2-3 minutes per subscription. By default all subscriptions and resource groups are included. Subscriptions can be specified using the *-Subscriptions* parameter as a comma separated list of subscriptions. Resource Groups can be specified using the *-ResourceGroups* parameter as a comma separated list of resource groups.
+**Option 2: Service Principal**
 
-## How to run the provided scripts?
+For automation or when browser login isn't available:
 
-See below for examples on running the LM Cloud Resource Inventory scripts. For a list of all parameters you can use the *-h* flag to show all options:
+1. Create a service principal:
+   ```bash
+   az ad sp create-for-rbac --name "LMInventory" --role "Reader" \
+     --scopes /subscriptions/<subscription-id>
+   ```
 
-**AWS**
+2. Set environment variables with the output:
+   ```bash
+   export AZURE_CLIENT_ID="appId-from-output"
+   export AZURE_CLIENT_SECRET="password-from-output"
+   export AZURE_TENANT_ID="tenant-from-output"
+   ```
+
+**Azure Resources:**
+- [Sign in with Azure CLI](https://learn.microsoft.com/en-us/cli/azure/authenticate-azure-cli)
+- [Create a service principal](https://learn.microsoft.com/en-us/cli/azure/create-an-azure-service-principal-azure-cli)
+- [Azure RBAC built-in roles](https://learn.microsoft.com/en-us/azure/role-based-access-control/built-in-roles)
+
+---
+
+### GCP Credentials
+
+**Option 1: gcloud CLI (Recommended)**
+
+1. Install the gcloud CLI: [Google Cloud CLI Installation Guide](https://cloud.google.com/sdk/docs/install)
+
+2. Initialize and authenticate:
+   ```bash
+   gcloud init
+   ```
+   Follow the prompts to select your project and authenticate.
+
+3. Set application default credentials:
+   ```bash
+   gcloud auth application-default login
+   ```
+
+4. Verify setup:
+   ```bash
+   gcloud config list
+   ```
+
+**Option 2: Service Account Key**
+
+For automation or non-interactive use:
+
+1. Create a service account in the [GCP Console](https://console.cloud.google.com/iam-admin/serviceaccounts)
+
+2. Grant the **Cloud Asset Viewer** role
+
+3. Create and download a JSON key file
+
+4. Set the environment variable:
+   ```bash
+   export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account-key.json"
+   ```
+
+**GCP Resources:**
+- [Installing Google Cloud CLI](https://cloud.google.com/sdk/docs/install)
+- [Application Default Credentials](https://cloud.google.com/docs/authentication/application-default-credentials)
+- [Creating service account keys](https://cloud.google.com/iam/docs/keys-create-delete)
+
+---
+
+### OCI Credentials
+
+**Option 1: OCI CLI Configuration (Recommended)**
+
+1. Install the OCI CLI: [OCI CLI Installation Guide](https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/cliinstall.htm)
+
+2. Run the setup wizard:
+   ```bash
+   oci setup config
+   ```
+   This will prompt you for:
+   - User OCID (found in OCI Console → Profile → User Settings)
+   - Tenancy OCID (found in OCI Console → Profile → Tenancy)
+   - Region identifier (e.g., `us-phoenix-1`)
+   - Generate a new API key pair (recommended)
+
+3. Upload the public key to your OCI user profile
+
+4. Verify setup:
+   ```bash
+   oci iam region list
+   ```
+
+**Configuration File Location:** `~/.oci/config`
+
+Example config file:
+
+```ini
+[DEFAULT]
+user=ocid1.user.oc1..aaaaaaaxxxxxxxxxx
+fingerprint=aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99
+tenancy=ocid1.tenancy.oc1..aaaaaaaxxxxxxxxxx
+region=us-phoenix-1
+key_file=~/.oci/oci_api_key.pem
 ```
-#Make the script executable
-pwsh
 
-#Run resource count script for two regions (us-east-1, us-east-2)
-.\get_aws_resource_counts.ps1 -Regions "us-east-1,us-east-2"
+**OCI Resources:**
+- [OCI CLI Quickstart](https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/cliinstall.htm)
+- [Required Keys and OCIDs](https://docs.oracle.com/en-us/iaas/Content/API/Concepts/apisigningkey.htm)
+- [Managing API Keys](https://docs.oracle.com/en-us/iaas/Content/Identity/Tasks/managingcredentials.htm)
 
-#Run resource count script for all regions with a output file named aws_resource_count_output.csv
-.\get_aws_resource_counts.ps1 -OutputFile aws_resource_count_output.csv
+---
 
-#Run resource count script for all regions and include a detailed inventory file with the results
-$results = .\get_aws_resource_counts.ps1 -DetailedResults -PassThru
+## Running in Cloud Shell
 
-#Run resource count script for an Organizational Unit (OU) with ID "ou-1234-5678abcd" and assume role "OrganizationAccountAccessRole" in member accounts
-.\get_aws_ou_resource_counts.ps1 -OrganizationalUnitId "ou-1234-5678abcd" -AssumeRole "OrganizationAccountAccessRole" -OutputFile "ou_resource_counts.csv"
+Each cloud provider offers a browser-based shell with credentials pre-configured. **This is the fastest way to run the inventory tool** - no local setup required.
 
-#Run resource count script for an OU with ID "ou-9876-dcba4321", assume role "CustomInventoryRole", include detailed results, and limit to specific regions
-.\get_aws_ou_resource_counts.ps1 -OrganizationalUnitId "ou-9876-dcba4321" -AssumeRole "CustomInventoryRole" -DetailedResults -Regions "us-east-1,us-west-2"
+| Provider | Cloud Shell | Notes |
+|----------|-------------|-------|
+| AWS | [AWS CloudShell](https://console.aws.amazon.com/cloudshell/) | Python pre-installed, credentials automatic |
+| Azure | [Azure Cloud Shell](https://shell.azure.com/) | Python pre-installed, `az` authenticated |
+| GCP | [Google Cloud Shell](https://shell.cloud.google.com/) | Python & gcloud pre-installed |
+| OCI | [OCI Cloud Shell](https://cloud.oracle.com/?cloudshell=true) | OCI CLI pre-installed |
 
-#Run resource count script for an OU with ID "ou-abcd-1234efgh", assume role "ResourceInventoryRole", pass through results, and use a custom global region
-$results = .\get_aws_ou_resource_counts.ps1 -OrganizationalUnitId "ou-abcd-1234efgh" -AssumeRole "ResourceInventoryRole" -PassThru -GlobalRegion "us-west-2"
+---
 
+## Detailed Usage
 
+### AWS
+
+```bash
+# Single account
+python -m src.cli run -p aws -o aws_summary.csv
+
+# With specific profile
+python -m src.cli run -p aws --profile myprofile -o aws_summary.csv
+
+# AWS Organizations (multi-account)
+python -m src.cli collect -p aws --organization OrganizationAccountAccessRole -o aws_inventory.json
 ```
 
-**Azure**
-```
-#Start a PowerShell session
-pwsh
+**Required Permissions:**
+- `resource-explorer-2:Search`, `resource-explorer-2:ListViews` (if using Resource Explorer)
+- Or `ReadOnlyAccess` policy for fallback mode
 
-#Run resource count script for two subscriptions (Pay-As-You-Go & Production)
-.\get_azure_resource_counts.ps1 -Subscriptions "Pay-As-You-Go,Production" -OutputFile "custom_output.csv"
+**Note:** For best performance, enable [AWS Resource Explorer](https://docs.aws.amazon.com/resource-explorer/) with an aggregator index.
 
-#Run resource count script for all subscriptions with a output file named azure_resource_count_output.csv
-.\get_azure_resource_counts.ps1 -OutputFile azure_resource_count_output.csv
+### Azure
 
-#Run resource count script for all subscriptions and include a detailed inventory file with the results
-$results = .\get_azure_resource_counts.ps1 -DetailedResults -PassThru
-```
+```bash
+# All subscriptions
+python -m src.cli run -p azure -o azure_summary.csv
 
-## *What outputs do the scripts provide?*
-
-The script outputs are provided as CSV files that can be reviewed by customers, prior to sharing with LogicMonitor. Unless specified when running the resource count scripts, the default output files names are:
-```
-aws_resource_count_output(_detailed).csv
-azure_resource_count_output(_detailed).csv
+# Specific subscriptions
+python -m src.cli run -p azure -s "subscription-id-1" -s "subscription-id-2" -o azure_summary.csv
 ```
 
-Example CSV output:
-```
-Category,Number
-IaaS,71
-PaaS,15
-Non-Compute,349
-```
+**Required Permissions:** `Reader` role at subscription or management group level.
 
-Example details Azure CSV output:
-```
-"Subscription","ResourceGroup","ResourceName","Location","Category"
-"MySub","RG1","cs21003200186d3f527","eastus","Non-compute"
-"MySub","RG2","lmdb1/master","westus","PaaS"
-rest of inventory....
+### GCP
+
+```bash
+# Single project
+python -m src.cli run -p gcp --project my-project -o gcp_summary.csv
+
+# Organization-wide
+python -m src.cli run -p gcp --organization 123456789 -o gcp_summary.csv
 ```
 
-Example details AWS CSV output:
+**Required Permissions:** `roles/cloudasset.viewer`
+
+### OCI
+
+```bash
+# Tenancy-wide
+python -m src.cli run -p oci -o oci_summary.csv
+
+# Specific compartment
+python -m src.cli run -p oci --compartment ocid1.compartment.oc1..xxx -o oci_summary.csv
 ```
-"ResourceType","Type","Count"
-"AWS::Athena::WorkGroup","Non-Compute","1"
-"AWS::Backup::BackupVault","Non-Compute","1"
-"AWS::Bedrock::FoundationModels","PaaS","68"
-"AWS::DynamoDB::Table","Non-Compute","1"
-rest of inventory....
+
+**Required Permissions:** `Allow group <group> to inspect all-resources in tenancy`
+
+---
+
+## Output Files
+
+### Summary CSV
+
+```csv
+Provider,Category,Count
+aws,IaaS,150
+aws,PaaS,75
+aws,Non-Compute,425
 ```
 
-## *What should we do with the outputs after we're done running these scripts?*
+### Detailed CSV (with `-d` flag)
 
-LogicMonitor recommends reviewing the output(s) of the script(s) prior to sharing with LogicMonitor, so as to ensure comfort with the information being provided.
-
-The outputs can be downloaded from the provider's cloud shell:
-* [Download files from AWS CloudShell](https://docs.aws.amazon.com/cloudshell/latest/userguide/getting-started.html#download-file)
-* [Download files from the Azure Cloud Shell](https://learn.microsoft.com/en-us/azure/cloud-shell/persisting-shell-storage#download-files-in-azure-cloud-shell)
-
-## *How to calculate Kubernetes resource counts?*
-
-LogicMonitor recommends utilizing kubectl in order to get resource counts for all K8s deployments whether that be EKS,AKS or self hosted. For each cluster you manage you can run the following command to get the number of pods in the required clusters:
-
+```csv
+Provider,Account,Region,ResourceType,Category,Count
+aws,123456789012,us-east-1,AWS::EC2::Instance,IaaS,42
+aws,123456789012,us-east-1,AWS::Lambda::Function,PaaS,15
 ```
+
+### Raw Inventory JSON
+
+```json
+[
+  {
+    "provider": "aws",
+    "account_id": "123456789012",
+    "region": "us-east-1",
+    "resource_type": "AWS::EC2::Instance",
+    "count": 42,
+    "timestamp": "2024-12-22T10:30:00Z"
+  }
+]
+```
+
+---
+
+## Architecture
+
+The tool is designed with separation of concerns:
+
+1. **Data Collection** - Provider-specific collectors gather resource counts
+2. **Configuration** - JSON files define resource-to-category mappings
+3. **Calculation** - License calculator processes inventory and applies rules
+4. **Output** - Unified CSV/JSON output format
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed technical documentation.
+
+---
+
+## Configuration
+
+### Resource Mappings
+
+Resource type to category mappings are defined in `config/resource_mappings.json`. Add new resource types here without modifying code.
+
+### License Rules
+
+Calculation rules are defined in `config/license_rules.json`, including:
+- Category definitions
+- No-charge resources
+- Special counting rules
+
+---
+
+## Kubernetes Resource Counting
+
+For Kubernetes-based services (EKS, AKS, GKE), LogicMonitor counts K8s pods as the billable unit when using LM Container monitoring.
+
+To get pod counts for each cluster:
+
+```bash
 kubectl get pods --all-namespaces --no-headers -o custom-columns=Type:kind | sort | uniq -c
 ```
 
-## *Where can we get support if we have questions or concerns about running these scripts?*
+---
 
-As these scripts are most commonly utilized in the LogicMonitor pre-sales process, reach out to your friendly neighborhood Sales Engineer or Customer Success Manager for additional support.
+## CLI Reference
+
+```bash
+# Show all commands
+python -m src.cli --help
+
+# Collect resources
+python -m src.cli collect --help
+
+# Calculate licenses
+python -m src.cli calculate --help
+
+# Run both steps
+python -m src.cli run --help
+
+# Show required permissions
+python -m src.cli permissions -p aws
+```
+
+---
+
+## Troubleshooting
+
+### AWS: "Resource Explorer not enabled"
+
+The tool will fall back to direct API calls (slower). For best performance:
+1. Enable AWS Resource Explorer in your account
+2. Create an aggregator index for cross-region queries
+
+### AWS: "Access Denied" or "UnauthorizedAccess"
+
+1. Verify your credentials are configured:
+   ```bash
+   aws sts get-caller-identity
+   ```
+
+2. Check that your IAM user/role has the required permissions (see [docs/PERMISSIONS.md](docs/PERMISSIONS.md))
+
+### Azure: "AuthorizationFailed"
+
+1. Ensure you're logged in:
+   ```bash
+   az account show
+   ```
+
+2. Verify you have the `Reader` role assigned:
+   ```bash
+   az role assignment list --assignee $(az account show --query user.name -o tsv)
+   ```
+
+### GCP: "Permission denied"
+
+1. Verify authentication:
+   ```bash
+   gcloud auth list
+   ```
+
+2. Check Cloud Asset Viewer role:
+   ```bash
+   gcloud projects get-iam-policy <project-id> --filter="bindings.role:cloudasset.viewer"
+   ```
+
+### OCI: "NotAuthorizedOrNotFound"
+
+1. Verify your config file:
+   ```bash
+   cat ~/.oci/config
+   ```
+
+2. Check policy:
+   ```bash
+   oci iam policy list --compartment-id <tenancy-ocid> --all
+   ```
+
+### General: "ModuleNotFoundError"
+
+Install the required dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+## Security
+
+- **Read-only access only** - No write, modify, or delete operations
+- **No credential storage** - Uses provider credential chains
+- **No external network calls** - Only communicates with cloud provider APIs
+- **Audit-friendly output** - Review JSON/CSV before sharing
+
+---
+
+## Data Privacy
+
+**The tool collects:**
+- Resource type counts
+- Account/subscription identifiers
+- Region/location information
+
+**The tool does NOT collect:**
+- Resource names or IDs (unless using detailed mode)
+- Resource content or data
+- Configuration details
+- Credentials or secrets
+
+---
+
+## Support
+
+For questions or issues:
+- **Pre-sales:** Contact your LogicMonitor Sales Engineer
+- **Customers:** Contact your Customer Success Manager
+
+---
+
+## Documentation
+
+- [Supported Resources](docs/SUPPORTED_RESOURCES.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Required Permissions](docs/PERMISSIONS.md)
+- [LogicMonitor Cloud Services Documentation](https://www.logicmonitor.com/support/cloud-services-and-resource-units)
+
+---
+
+## License
+
+MIT License - See LICENSE file for details.

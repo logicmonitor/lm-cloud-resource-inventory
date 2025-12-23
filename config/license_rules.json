@@ -1,0 +1,80 @@
+{
+  "$schema": "License calculation rules for LM Cloud",
+  "version": "1.0.0",
+  "categories": [
+    {
+      "name": "IaaS",
+      "description": "Infrastructure as a Service - Virtual machines and compute instances",
+      "billing_model": "Per instance"
+    },
+    {
+      "name": "PaaS",
+      "description": "Platform as a Service - Managed services, containers, serverless functions",
+      "billing_model": "Per service unit"
+    },
+    {
+      "name": "Non-Compute",
+      "description": "Infrastructure resources that are not compute instances (storage, networking, etc.)",
+      "billing_model": "Per resource"
+    },
+    {
+      "name": "No-Charge",
+      "description": "Resources monitored at no additional cost",
+      "billing_model": "Free"
+    }
+  ],
+  "no_charge_resources": {
+    "aws": [
+      "AWS::WAF::WebACL",
+      "AWS::WAFv2::WebACL",
+      "AWS::Shield::Protection",
+      "AWS::TrustedAdvisor::Check",
+      "AWS::Connect::Instance"
+    ],
+    "azure": [
+      "microsoft.advisor/recommendations",
+      "microsoft.costmanagement/exports"
+    ],
+    "gcp": [
+      "bigquery.googleapis.com/Dataset",
+      "bigquery.googleapis.com/Table"
+    ],
+    "oci": []
+  },
+  "special_counting_rules": {
+    "description": "Special rules for counting specific resource types",
+    "rules": [
+      {
+        "provider": "aws",
+        "resource_type_pattern": "AWS::EKS::*",
+        "note": "For EKS with LM Container monitoring, count K8s pods instead of clusters"
+      },
+      {
+        "provider": "azure",
+        "resource_type_pattern": "microsoft.containerservice/managedclusters",
+        "note": "For AKS with LM Container monitoring, count K8s pods instead of clusters"
+      },
+      {
+        "provider": "gcp",
+        "resource_type_pattern": "container.googleapis.com/Cluster",
+        "note": "For GKE with LM Container monitoring, count K8s pods instead of clusters"
+      }
+    ]
+  },
+  "kubernetes_pod_counting": {
+    "enabled": false,
+    "description": "When enabled, use kubectl to count pods for container services",
+    "command": "kubectl get pods --all-namespaces --no-headers -o custom-columns=Type:kind | sort | uniq -c"
+  },
+  "output_format": {
+    "summary": {
+      "columns": ["Provider", "Category", "Count"],
+      "group_by": ["provider", "category"]
+    },
+    "detailed": {
+      "columns": ["Provider", "Account", "Region", "ResourceType", "Category", "Count"],
+      "group_by": ["provider", "account_id", "region", "resource_type"]
+    }
+  }
+}
+
