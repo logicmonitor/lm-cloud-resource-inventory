@@ -202,7 +202,10 @@ class LicenseCalculator:
 
     def save_summary_csv(self, results: Dict, output_path: str) -> None:
         """
-        Save summary results to a CSV file.
+        Save detailed summary results to a CSV file.
+        
+        Includes full breakdown by provider, account, category, resource type, and region.
+        This allows users to analyze and filter results as needed.
         
         Args:
             results: Results from calculate().
@@ -212,19 +215,32 @@ class LicenseCalculator:
 
         with open(output_path, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
-            writer.writerow(['Provider', 'Category', 'Count'])
+            writer.writerow(['Provider', 'Account', 'Category', 'ResourceType', 'Region', 'Count'])
 
-            for provider, categories in results['summary']['by_provider'].items():
-                for category, count in sorted(categories.items()):
-                    if category != 'Unsupported':  # Exclude unsupported from summary
-                        writer.writerow([provider, category, count])
+            # Sort by provider, category, resource type, region for clean output
+            sorted_records = sorted(
+                [r for r in results['detailed'] if r['category'] not in ('Unsupported', 'No-Charge')],
+                key=lambda x: (x['provider'], x['category'], x['resource_type'], x['region'])
+            )
 
-            # Add totals row
+            for record in sorted_records:
+                writer.writerow([
+                    record['provider'],
+                    record['account_id'],
+                    record['category'],
+                    record['resource_type'],
+                    record['region'],
+                    record['count']
+                ])
+
+            # Add blank row before totals
             writer.writerow([])
-            writer.writerow(['TOTAL', '', ''])
-            for category, count in sorted(results['summary']['totals'].items()):
-                if category != 'Unsupported':
-                    writer.writerow(['', category, count])
+
+            # Add totals rows
+            for category in ['IaaS', 'PaaS', 'Non-Compute']:
+                count = results['summary']['totals'].get(category, 0)
+                if count > 0:
+                    writer.writerow(['TOTAL', '', category, '', '', count])
 
         logger.info("Saved summary to %s", output_path)
 
@@ -257,7 +273,7 @@ class LicenseCalculator:
 
     def print_summary(self, results: Dict) -> None:
         """
-        Print a formatted summary of results.
+        Print a formatted summary of results with resource type breakdown.
         
         Args:
             results: Results from calculate().
@@ -266,20 +282,39 @@ class LicenseCalculator:
         print("LICENSE REQUIREMENT SUMMARY")
         print("=" * 70)
 
-        # Per-provider summary
-        for provider, categories in sorted(results['summary']['by_provider'].items()):
+        # Build resource type breakdown by provider -> category -> resource_type
+        # Aggregate counts across regions for cleaner CLI output
+        breakdown = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+        for record in results['detailed']:
+            if record['category'] not in ('Unsupported', 'No-Charge'):
+                provider = record['provider']
+                category = record['category']
+                resource_type = record['resource_type']
+                breakdown[provider][category][resource_type] += record['count']
+
+        # Per-provider summary with resource type breakdown
+        for provider in sorted(breakdown.keys()):
             print(f"\n{provider.upper()}")
             print("-" * 40)
-            for category, count in sorted(categories.items()):
-                if category != 'Unsupported':
-                    print(f"  {category:20} {count:>10}")
 
-        # Totals
+            provider_categories = results['summary']['by_provider'].get(provider, {})
+            for category in ['IaaS', 'PaaS', 'Non-Compute']:
+                cat_total = provider_categories.get(category, 0)
+                if cat_total > 0:
+                    print(f"  {category:20} {cat_total:>10}")
+                    # Show resource types under this category
+                    resource_types = breakdown[provider][category]
+                    for res_type, count in sorted(resource_types.items(),
+                                                   key=lambda x: -x[1]):
+                        print(f"    {res_type:36} {count:>6}")
+
+        # Totals (category totals only, no breakdown)
         print("\n" + "=" * 70)
         print("TOTALS")
         print("-" * 40)
-        for category, count in sorted(results['summary']['totals'].items()):
-            if category != 'Unsupported':
+        for category in ['IaaS', 'PaaS', 'Non-Compute']:
+            count = results['summary']['totals'].get(category, 0)
+            if count > 0:
                 print(f"  {category:20} {count:>10}")
 
         # Unmapped types notice
