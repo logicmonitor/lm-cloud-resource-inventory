@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=61.0", "setuptools-scm>=8.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lm-cloud-inventory"
+dynamic = ["version"]
+description = "Cloud resource inventory collection for LogicMonitor licensing"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+
+[project.scripts]
+lm-cloud-inventory = "src.cli:main"
+lmci = "src.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[tool.setuptools.package-data]
+"src.config" = ["*.json"]
+
+[tool.setuptools_scm]
+version_file = "src/_version.py"
+
+# Pylint Configuration
+[tool.pylint.main]
+ignore = ["tests", ".git", "__pycache__", "_version.py", "build"]
+jobs = 0
+py-version = "3.9"
+recursive = true
+
+[tool.pylint.messages_control]
+disable = [
+    "C0114",  # missing-module-docstring
+    "C0115",  # missing-class-docstring  
+    "C0116",  # missing-function-docstring
+    "C0415",  # import-outside-toplevel (intentional lazy loading)
+    "R0903",  # too-few-public-methods
+    "R0913",  # too-many-arguments
+    "R0914",  # too-many-locals
+    "R0917",  # too-many-positional-arguments
+    "R0801",  # duplicate-code (convenience functions are similar by design)
+    "R1705",  # no-else-return (style preference)
+    "W0511",  # fixme
+    "W0718",  # broad-exception-caught (needed for graceful error handling)
+    "W1309",  # f-string-without-interpolation
+    "E0401",  # import-error
+]
+
+[tool.pylint.format]
+max-line-length = 120
+
+[tool.pylint.basic]
+good-names = ["i", "j", "k", "f", "e", "id", "_", "p"]
+
+[tool.pylint.design]
+max-args = 10
+max-attributes = 15
