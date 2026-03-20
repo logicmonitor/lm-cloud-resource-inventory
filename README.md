@@ -120,18 +120,35 @@ lmci collect -p <provider> [options]
 
 ### `calculate` Command
 
-Calculate licenses from an existing inventory JSON file.
+Calculate licenses from an existing inventory JSON file or a simple CSV upload.
 
 ```bash
 lmci calculate -i <inventory.json> [options]
+lmci calculate --csv-input <inventory.csv> [options]
 ```
 
 | Option | Description |
 |--------|-------------|
-| `-i, --input` | Input inventory JSON file **(required)** |
+| `-i, --input` | Input inventory JSON file |
+| `--csv-input` | Input inventory CSV file with `provider,resource_type,count` headers |
+| `-p, --provider` | Optional provider filter for CSV input |
 | `-o, --output` | Output CSV file (default: `license_summary.csv`) |
 | `-d, --detailed` | Generate detailed CSV |
 | `--show-unmapped` | List unmapped resource types |
+
+Provide exactly one of `--input` or `--csv-input`.
+
+**CSV format**
+
+```csv
+provider,resource_type,count
+aws,AWS::EC2::Instance,42
+aws,lambda function,85
+azure,Virtual machine,18
+azure,App Service plan,6
+```
+
+CSV imports are case-insensitive and support common aliases. For example, AWS values do not need to exactly match the internal `ec2:instance` mapping format, and Azure display names such as `Virtual machine` or `App Service plan` are accepted.
 
 ### `permissions` Command
 

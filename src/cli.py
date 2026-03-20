@@ -8,6 +8,7 @@ AWS, Azure, GCP, and OCI for LogicMonitor licensing.
 import json
 import logging
 import sys
+import csv
 from pathlib import Path
 from typing import Optional
 
@@ -22,6 +23,57 @@ except ImportError:
     sys.exit(1)
 
 console = Console()
+
+
+def load_inventory_csv(csv_path: str, calculator, provider_filter: Optional[str] = None):
+    """Load inventory rows from a CSV file into the standard inventory schema."""
+    inventory = []
+
+    with open(csv_path, 'r', encoding='utf-8-sig', newline='') as f:
+        reader = csv.DictReader(f)
+        if not reader.fieldnames:
+            raise ValueError("CSV input is missing a header row.")
+
+        headers = {header.strip().lower(): header for header in reader.fieldnames if header}
+        required_headers = {'provider', 'resource_type', 'count'}
+        missing_headers = required_headers - set(headers)
+        if missing_headers:
+            missing_list = ', '.join(sorted(missing_headers))
+            raise ValueError(f"CSV input is missing required columns: {missing_list}")
+
+        for line_number, row in enumerate(reader, start=2):
+            provider = (row.get(headers['provider']) or '').strip().lower()
+            resource_type = (row.get(headers['resource_type']) or '').strip()
+            raw_count = (row.get(headers['count']) or '').strip()
+
+            if not provider or not resource_type or not raw_count:
+                raise ValueError(
+                    f"CSV row {line_number} must include provider, resource_type, and count."
+                )
+
+            if provider_filter and provider != provider_filter:
+                continue
+
+            try:
+                count = int(raw_count)
+            except ValueError as exc:
+                raise ValueError(
+                    f"CSV row {line_number} has a non-integer count: {raw_count}"
+                ) from exc
+
+            if count < 0:
+                raise ValueError(f"CSV row {line_number} has a negative count: {count}")
+
+            canonical_type = calculator.normalize_resource_type(provider, resource_type)
+            inventory.append({
+                'provider': provider,
+                'account_id': '',
+                'region': '',
+                'resource_type': canonical_type,
+                'count': count
+            })
+
+    return inventory
 
 
 def setup_logging(verbose: bool = False):
@@ -166,8 +218,13 @@ def collect(
 
 
 @cli.command()
-@click.option('--input', '-i', 'input_path', required=True,
+@click.option('--input', '-i', 'input_path',
               help='Input inventory JSON file')
+@click.option('--csv-input', 'csv_input_path',
+              help='Input inventory CSV file with provider,resource_type,count headers')
+@click.option('--provider', '-p',
+              type=click.Choice(['aws', 'azure', 'gcp', 'oci']),
+              help='Optional provider filter for CSV input')
 @click.option('--output', '-o', default='license_summary.csv',
               help='Output summary CSV file')
 @click.option('--detailed', '-d', is_flag=True,
@@ -176,6 +233,8 @@ def collect(
               help='List resource types not mapped to license categories')
 def calculate(
     input_path: str,
+    csv_input_path: Optional[str],
+    provider: Optional[str],
     output: str,
     detailed: bool,
     show_unmapped: bool
@@ -188,18 +247,26 @@ def calculate(
       lm-cloud-inventory calculate -i inventory.json -o summary.csv
       
       lm-cloud-inventory calculate -i inventory.json -d --show-unmapped
+
+      lm-cloud-inventory calculate --csv-input inventory.csv
     """
     console.print("\n[bold blue]Calculating license requirements...[/bold blue]\n")
 
     try:
         from .calculator import LicenseCalculator
 
-        # Load inventory
-        with open(input_path, 'r', encoding='utf-8') as f:
-            inventory = json.load(f)
+        if bool(input_path) == bool(csv_input_path):
+            raise ValueError("Provide exactly one of --input or --csv-input.")
 
         # Create calculator with default config
         calculator = LicenseCalculator.from_config_files()
+
+        # Load inventory
+        if input_path:
+            with open(input_path, 'r', encoding='utf-8') as f:
+                inventory = json.load(f)
+        else:
+            inventory = load_inventory_csv(csv_input_path, calculator, provider_filter=provider)
 
         # Calculate
         results = calculator.calculate(inventory)
@@ -226,7 +293,8 @@ def calculate(
         console.print(f"\n[green]✓ Summary saved to {output}[/green]\n")
 
     except FileNotFoundError:
-        console.print(f"[red]Error: Input file not found: {input_path}[/red]")
+        missing_path = input_path or csv_input_path
+        console.print(f"[red]Error: Input file not found: {missing_path}[/red]")
         sys.exit(1)
 
     except Exception as e:
