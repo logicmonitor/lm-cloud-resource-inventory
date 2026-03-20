@@ -3,7 +3,9 @@
 import json
 import logging
 import math
-from typing import Dict, List, Set, Tuple
+import re
+from functools import lru_cache
+from typing import Dict, List, Optional, Set, Tuple
 from collections import defaultdict
 
 logger = logging.getLogger(__name__)
@@ -85,13 +87,15 @@ class LicenseCalculator:
         # Look up in mappings
         provider_mappings = self.resource_mappings.get(provider, {})
 
+        canonical_type = self.normalize_resource_type(provider, resource_type)
+
         # Try exact match first
-        resource_info = provider_mappings.get(resource_type)
+        resource_info = provider_mappings.get(canonical_type)
         if resource_info:
             return resource_info.get('category', 'Unsupported')
 
         # Try case-insensitive match
-        resource_type_lower = resource_type.lower()
+        resource_type_lower = canonical_type.lower()
         for mapped_type, info in provider_mappings.items():
             if mapped_type.lower() == resource_type_lower:
                 return info.get('category', 'Unsupported')
@@ -99,6 +103,86 @@ class LicenseCalculator:
         # Not found
         self._unsupported_types.add((provider, resource_type))
         return "Unsupported"
+
+    def normalize_resource_type(self, provider: str, resource_type: str) -> str:
+        """
+        Normalize imported resource types to canonical mapping keys.
+
+        This supports case-insensitive matching, friendly aliases, and
+        provider-specific variants such as AWS CloudFormation-style names.
+        """
+        provider_mappings = self.resource_mappings.get(provider, {})
+        if not provider_mappings or not resource_type:
+            return resource_type
+
+        if resource_type in provider_mappings:
+            return resource_type
+
+        alias_index = self._build_alias_index(provider)
+        normalized_key = self._normalize_alias(resource_type)
+        return alias_index.get(normalized_key, resource_type)
+
+    @staticmethod
+    def _normalize_alias(value: str) -> str:
+        """Normalize a resource label for case-insensitive alias matching."""
+        normalized = re.sub(r'([a-z0-9])([A-Z])', r'\1 \2', value or '')
+        normalized = normalized.replace('::', ' ')
+        normalized = normalized.replace('/', ' ')
+        normalized = normalized.replace(':', ' ')
+        normalized = normalized.replace('-', ' ')
+        normalized = normalized.replace('_', ' ')
+        normalized = normalized.replace('.', ' ')
+        normalized = re.sub(r'\s+', ' ', normalized.lower()).strip()
+        return normalized
+
+    @staticmethod
+    def _humanize_provider_leaf(provider: str, resource_type: str) -> str:
+        """Convert a provider resource key into a readable alias candidate."""
+        if provider == 'aws' and ':' in resource_type:
+            service, raw_type = resource_type.split(':', 1)
+            value = f"{service} {raw_type}"
+        elif provider == 'azure' and '/' in resource_type:
+            segments = resource_type.split('/')
+            value = ' '.join(segment for segment in segments[1:] if segment)
+        else:
+            value = resource_type.split('/')[-1].split(':')[-1]
+
+        value = re.sub(r'([a-z0-9])([A-Z])', r'\1 \2', value)
+        value = re.sub(r'(?<=[a-z])(?=(instances|machines|clusters|groups|accounts|servers|vaults|services|jobs|rules|plans|apps|sets|pools|zones|profiles|balances|interfaces|addresses|gateways|databases|workspaces|registries))', ' ', value, flags=re.IGNORECASE)
+        return re.sub(r'\s+', ' ', value).strip()
+
+    @classmethod
+    def _generate_aliases(cls, provider: str, resource_type: str, resource_info: Dict) -> Set[str]:
+        """Generate alias candidates for a canonical resource mapping."""
+        aliases = {resource_type}
+        aliases.add(cls._humanize_provider_leaf(provider, resource_type))
+
+        unit = resource_info.get('unit')
+        if unit:
+            aliases.add(unit)
+
+        if provider == 'aws' and ':' in resource_type:
+            service, raw_type = resource_type.split(':', 1)
+            aliases.add(f"AWS::{service.upper()}::{raw_type.replace('-', '').replace('/', '').upper()}")
+            aliases.add(f"AWS::{service}::{raw_type}")
+            aliases.add(f"{service} {raw_type}")
+
+        for alias in resource_info.get('aliases', []):
+            aliases.add(alias)
+
+        return {alias for alias in aliases if alias}
+
+    @lru_cache(maxsize=None)
+    def _build_alias_index(self, provider: str) -> Dict[str, str]:
+        """Build a normalized alias index for one provider."""
+        alias_index = {}
+        provider_mappings = self.resource_mappings.get(provider, {})
+
+        for resource_type, resource_info in provider_mappings.items():
+            for alias in self._generate_aliases(provider, resource_type, resource_info):
+                alias_index[self._normalize_alias(alias)] = resource_type
+
+        return alias_index
 
     def _matches_pattern(self, resource_type: str, pattern: str) -> bool:
         """
@@ -177,7 +261,8 @@ class LicenseCalculator:
             provider = record.get('provider', 'unknown')
             account_id = record.get('account_id', '')
             region = record.get('region', '')
-            resource_type = record.get('resource_type', '')
+            original_resource_type = record.get('resource_type', '')
+            resource_type = self.normalize_resource_type(provider, original_resource_type)
             count = record.get('count', 0)
 
             category = self.get_category(provider, resource_type)
@@ -359,9 +444,10 @@ class LicenseCalculator:
         hybrid_units = results['summary'].get('hybrid_units', 0)
         iaas_count = results['summary']['totals'].get('IaaS', 0)
         paas_count = results['summary']['totals'].get('PaaS', 0)
+        paas_hru = math.ceil(paas_count / HYBRID_UNIT_RATIOS["PaaS"]) if paas_count > 0 else 0
         print("-" * 40)
         print(f"  {'HYBRID RESOURCE UNITS':20} {hybrid_units:>10}")
-        print(f"    (IaaS: {iaas_count} + PaaS: ceil({paas_count}/7))")
+        print(f"    (IaaS: {iaas_count} + PaaS: {paas_hru})")
 
         # Unmapped types notice
         unsupported = self.get_unsupported_types()
