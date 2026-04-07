@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Dict, List
 import json
 import logging
 
@@ -17,18 +17,10 @@ class BaseCollector(ABC):
     and implement the required abstract methods.
     """
 
-    # Provider identifier (aws, azure, gcp, oci)
     PROVIDER: str = ""
 
-    def __init__(self, resource_mappings: Dict = None):
-        """
-        Initialize the collector.
-        
-        Args:
-            resource_mappings: Optional dict mapping resource types to categories.
-                             If not provided, loads from config/resource_mappings.json.
-        """
-        self.resource_mappings = resource_mappings or {}
+    def __init__(self):
+        """Initialize the collector."""
         self._inventory: List[Dict] = []
 
     @abstractmethod
@@ -39,12 +31,12 @@ class BaseCollector(ABC):
         Returns:
             List of resource records with schema:
             {
-                "provider": str,          # aws, azure, gcp, oci
-                "account_id": str,        # Account/Subscription/Project/Tenancy ID
-                "region": str,            # Resource region/location
-                "resource_type": str,     # Provider-specific resource type
-                "count": int,             # Number of resources
-                "timestamp": str          # ISO 8601 timestamp
+                "provider": str,
+                "account_id": str,
+                "region": str,
+                "resource_type": str,
+                "count": int,
+                "timestamp": str  (ISO 8601)
             }
         """
 
@@ -94,20 +86,6 @@ class BaseCollector(ABC):
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
-    def get_category(self, resource_type: str) -> Optional[str]:
-        """
-        Get the license category for a resource type.
-        
-        Args:
-            resource_type: Provider-specific resource type string.
-            
-        Returns:
-            Category string (IaaS, PaaS, Non-Compute) or None if not mapped.
-        """
-        provider_mappings = self.resource_mappings.get(self.PROVIDER, {})
-        resource_info = provider_mappings.get(resource_type, {})
-        return resource_info.get("category")
-
     def save_inventory(self, output_path: str, inventory: List[Dict] = None) -> None:
         """
         Save inventory to a JSON file.
@@ -130,7 +108,6 @@ class BaseCollector(ABC):
         """
         data = inventory or self._inventory
 
-        # Aggregate by resource type
         type_counts = {}
         total_resources = 0
 
@@ -147,9 +124,8 @@ class BaseCollector(ABC):
         print(f"Total Resources: {total_resources}")
         print(f"{'='*60}")
 
-        # Sort by count descending
         sorted_types = sorted(type_counts.items(), key=lambda x: x[1], reverse=True)
-        for resource_type, count in sorted_types[:20]:  # Top 20
+        for resource_type, count in sorted_types[:20]:
             print(f"  {resource_type}: {count}")
 
         if len(sorted_types) > 20:

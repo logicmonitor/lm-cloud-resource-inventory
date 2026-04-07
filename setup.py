@@ -5,9 +5,6 @@ from setuptools import setup, find_packages
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
-with open("requirements.txt", "r", encoding="utf-8") as fh:
-    requirements = [line.strip() for line in fh if line.strip() and not line.startswith("#")]
-
 setup(
     name="lm-cloud-inventory",
     use_scm_version=True,
@@ -31,7 +28,28 @@ setup(
         "Programming Language :: Python :: 3.12",
     ],
     python_requires=">=3.9",
-    install_requires=requirements,
+    install_requires=[
+        "click>=8.3.1",
+        "rich>=14.2.0",
+    ],
+    extras_require={
+        "aws": ["boto3>=1.42.15"],
+        "azure": [
+            "azure-identity>=1.25.1",
+            "azure-mgmt-resourcegraph>=8.0.1",
+            "azure-mgmt-resource>=24.0.0",
+        ],
+        "gcp": ["google-cloud-asset>=4.1.0"],
+        "oci": ["oci>=2.164.2"],
+        "all": [
+            "boto3>=1.42.15",
+            "azure-identity>=1.25.1",
+            "azure-mgmt-resourcegraph>=8.0.1",
+            "azure-mgmt-resource>=24.0.0",
+            "google-cloud-asset>=4.1.0",
+            "oci>=2.164.2",
+        ],
+    },
     entry_points={
         "console_scripts": [
             "lm-cloud-inventory=src.cli:main",

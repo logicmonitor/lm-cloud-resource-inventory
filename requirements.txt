@@ -18,7 +18,3 @@ oci>=2.164.2
 # CLI and utilities
 click>=8.3.1
 rich>=14.2.0
-
-# Data processing
-pandas>=2.3.3
-

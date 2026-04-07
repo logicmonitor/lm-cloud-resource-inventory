@@ -9,6 +9,28 @@ description = "Cloud resource inventory collection for LogicMonitor licensing"
 readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "MIT"}
+dependencies = [
+    "click>=8.3.1",
+    "rich>=14.2.0",
+]
+
+[project.optional-dependencies]
+aws = ["boto3>=1.42.15"]
+azure = [
+    "azure-identity>=1.25.1",
+    "azure-mgmt-resourcegraph>=8.0.1",
+    "azure-mgmt-resource>=24.0.0",
+]
+gcp = ["google-cloud-asset>=4.1.0"]
+oci = ["oci>=2.164.2"]
+all = [
+    "boto3>=1.42.15",
+    "azure-identity>=1.25.1",
+    "azure-mgmt-resourcegraph>=8.0.1",
+    "azure-mgmt-resource>=24.0.0",
+    "google-cloud-asset>=4.1.0",
+    "oci>=2.164.2",
+]
 
 [project.scripts]
 lm-cloud-inventory = "src.cli:main"
@@ -34,7 +56,7 @@ recursive = true
 [tool.pylint.messages_control]
 disable = [
     "C0114",  # missing-module-docstring
-    "C0115",  # missing-class-docstring  
+    "C0115",  # missing-class-docstring
     "C0116",  # missing-function-docstring
     "C0415",  # import-outside-toplevel (intentional lazy loading)
     "R0903",  # too-few-public-methods

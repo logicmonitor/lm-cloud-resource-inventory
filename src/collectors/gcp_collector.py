@@ -20,7 +20,6 @@ class GCPCollector(BaseCollector):
 
     def __init__(
         self,
-        resource_mappings: Dict = None,
         project_id: str = None,
         organization_id: str = None,
         folder_id: str = None
@@ -29,16 +28,16 @@ class GCPCollector(BaseCollector):
         Initialize the GCP collector.
         
         Args:
-            resource_mappings: Optional dict mapping resource types to categories.
             project_id: GCP project ID to query (for project-scoped collection).
             organization_id: GCP organization ID (for org-wide collection).
             folder_id: GCP folder ID (for folder-scoped collection).
         """
-        super().__init__(resource_mappings)
+        super().__init__()
         self.project_id = project_id
         self.organization_id = organization_id
         self.folder_id = folder_id
         self._client = None
+        self._errors_encountered = False
 
     def _get_client(self):
         """Get Cloud Asset Inventory client."""
@@ -70,10 +69,8 @@ class GCPCollector(BaseCollector):
             import os
             import json
 
-            # Try environment variables first
             project = os.environ.get('GOOGLE_CLOUD_PROJECT') or os.environ.get('GCLOUD_PROJECT')
 
-            # If not set, try to read from service account credentials file
             if not project:
                 creds_file = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
                 if creds_file and os.path.exists(creds_file):
@@ -109,7 +106,6 @@ class GCPCollector(BaseCollector):
             client = self._get_client()
             scope = self._get_scope()
 
-            # Log the scope being used
             if self.organization_id:
                 logger.info("Scope: Organization %s", self.organization_id)
             elif self.folder_id:
@@ -117,7 +113,6 @@ class GCPCollector(BaseCollector):
             elif self.project_id:
                 logger.info("Scope: Project %s", self.project_id)
 
-            # Try a simple asset search to verify access
             from google.cloud import asset_v1
 
             request = asset_v1.SearchAllResourcesRequest(
@@ -125,13 +120,14 @@ class GCPCollector(BaseCollector):
                 page_size=1
             )
 
-            # Just try to get one result to verify permissions
             results = client.search_all_resources(request)
-            next(iter(results), None)  # Get first result or None
+            next(iter(results), None)
 
             logger.info("GCP permissions validated successfully")
             return True
 
+        except ImportError:
+            raise
         except Exception as e:
             logger.error("Permission validation failed: %s", e)
             return False
@@ -159,13 +155,11 @@ class GCPCollector(BaseCollector):
 
         from google.cloud import asset_v1
 
-        # Search all resources
         request = asset_v1.SearchAllResourcesRequest(
             scope=scope,
-            page_size=500  # Max page size
+            page_size=500
         )
 
-        # Count resources by type and location
         resource_counts = {}
         total_resources = 0
         projects_seen = set()
@@ -173,23 +167,21 @@ class GCPCollector(BaseCollector):
         try:
             logger.info("Scanning resources...")
             for resource in client.search_all_resources(request):
-                # Extract resource type from asset_type
-                # Format: servicename.googleapis.com/ResourceType
                 asset_type = resource.asset_type
 
-                # Extract project ID from name
-                # Format: //servicename.googleapis.com/projects/PROJECT_ID/...
                 name = resource.name
                 project = self._extract_project_from_name(name)
                 if project:
                     projects_seen.add(project)
 
-                # Get location
                 location = resource.location or 'global'
 
                 key = (asset_type, project, location)
                 resource_counts[key] = resource_counts.get(key, 0) + 1
                 total_resources += 1
+
+                if total_resources > 0 and total_resources % 5000 == 0:
+                    logger.info("Scanned %d resources so far...", total_resources)
 
             if projects_seen:
                 logger.info("Scanned %d resources across %d projects",
@@ -197,8 +189,8 @@ class GCPCollector(BaseCollector):
 
         except Exception as e:
             logger.error("Error during resource collection: %s", e)
+            self._errors_encountered = True
 
-        # Convert counts to inventory records
         inventory = []
         for (asset_type, project, location), count in resource_counts.items():
             record = self.create_inventory_record(
@@ -211,6 +203,12 @@ class GCPCollector(BaseCollector):
 
         self._inventory = inventory
         logger.info("Collected %d inventory records from GCP", len(inventory))
+
+        if self._errors_encountered:
+            logger.warning(
+                "Errors occurred during collection. Results may be incomplete. "
+                "Re-run with --verbose for details."
+            )
 
         return inventory
 
@@ -236,7 +234,6 @@ def collect_gcp(
     project_id: str = None,
     organization_id: str = None,
     folder_id: str = None,
-    resource_mappings: Dict = None,
     output_path: str = None
 ) -> List[Dict]:
     """
@@ -246,14 +243,12 @@ def collect_gcp(
         project_id: GCP project ID.
         organization_id: GCP organization ID.
         folder_id: GCP folder ID.
-        resource_mappings: Optional resource type mappings.
         output_path: Optional path to save inventory JSON.
         
     Returns:
         List of inventory records.
     """
     collector = GCPCollector(
-        resource_mappings=resource_mappings,
         project_id=project_id,
         organization_id=organization_id,
         folder_id=folder_id

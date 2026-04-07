@@ -20,7 +20,6 @@ class AzureCollector(BaseCollector):
 
     def __init__(
         self,
-        resource_mappings: Dict = None,
         subscription_ids: List[str] = None,
         management_group_id: str = None
     ):
@@ -28,18 +27,18 @@ class AzureCollector(BaseCollector):
         Initialize the Azure collector.
         
         Args:
-            resource_mappings: Optional dict mapping resource types to categories.
             subscription_ids: Optional list of subscription IDs to query.
                             If not provided, queries all accessible subscriptions.
             management_group_id: Optional management group ID for scope.
         """
-        super().__init__(resource_mappings)
+        super().__init__()
         self.subscription_ids = subscription_ids
         self.management_group_id = management_group_id
         self._credential = None
         self._graph_client = None
         self._resource_client = None
-        self._subscription_info: List[Dict] = []  # List of {id, name} dicts
+        self._subscription_info: List[Dict] = []
+        self._errors_encountered = False
 
     def _get_credential(self):
         """Get Azure credential using DefaultAzureCredential."""
@@ -70,6 +69,7 @@ class AzureCollector(BaseCollector):
     def _get_subscriptions(self) -> List[str]:
         """
         Get list of subscription IDs to query.
+        Results are cached after first discovery.
         
         Returns:
             List of subscription ID strings.
@@ -77,7 +77,6 @@ class AzureCollector(BaseCollector):
         if self.subscription_ids:
             return self.subscription_ids
 
-        # Get all accessible subscriptions with names
         try:
             from azure.mgmt.resource import SubscriptionClient
             sub_client = SubscriptionClient(self._get_credential())
@@ -92,7 +91,6 @@ class AzureCollector(BaseCollector):
                         'name': sub.display_name or sub.subscription_id
                     })
 
-            # Log subscriptions with names
             if self._subscription_info:
                 sub_names = [s['name'] for s in self._subscription_info]
                 if len(sub_names) <= 5:
@@ -102,6 +100,8 @@ class AzureCollector(BaseCollector):
                     logger.info("Found %d subscriptions: %s, and %d more",
                                 len(subscriptions), ", ".join(sub_names[:5]), len(sub_names) - 5)
 
+            # Cache the discovered subscriptions to avoid redundant API calls
+            self.subscription_ids = subscriptions
             return subscriptions
         except ImportError as exc:
             raise ImportError(
@@ -117,29 +117,27 @@ class AzureCollector(BaseCollector):
             True if permissions are available, False otherwise.
         """
         try:
-            # Get credential and log auth method
             credential = self._get_credential()
-            # The credential type name indicates the auth method
             cred_type = type(credential).__name__
             logger.info("Authenticating via: %s", cred_type)
 
-            # Try to list subscriptions to verify access
             subscriptions = self._get_subscriptions()
             if not subscriptions:
                 logger.warning("No accessible subscriptions found")
                 return False
 
-            # Try a simple Resource Graph query
             client = self._get_graph_client()
             from azure.mgmt.resourcegraph.models import QueryRequest
             query = QueryRequest(
-                subscriptions=subscriptions[:1],  # Just test with first subscription
+                subscriptions=subscriptions[:1],
                 query="Resources | take 1"
             )
             client.resources(query)
             logger.info("Azure permissions validated successfully")
             return True
 
+        except ImportError:
+            raise
         except Exception as e:
             logger.error("Permission validation failed: %s", e)
             return False
@@ -148,9 +146,6 @@ class AzureCollector(BaseCollector):
         """
         Get the current subscription context.
         
-        For Azure, this returns a comma-separated list of subscription IDs
-        or 'all' if querying all subscriptions.
-        
         Returns:
             String identifier for the subscription context.
         """
@@ -158,6 +153,72 @@ class AzureCollector(BaseCollector):
         if len(subs) == 1:
             return subs[0]
         return f"{len(subs)}_subscriptions"
+
+    def _query_resource_graph(self, query_str: str, subscriptions: List[str]) -> List[Dict]:
+        """
+        Execute a Resource Graph query with full pagination support.
+        
+        Azure Resource Graph returns max 1000 rows per request. This method
+        handles skip_token pagination to retrieve all results.
+        
+        Args:
+            query_str: KQL query string.
+            subscriptions: List of subscription IDs to query.
+            
+        Returns:
+            List of result row dicts.
+        """
+        from azure.mgmt.resourcegraph.models import (
+            QueryRequest, QueryRequestOptions
+        )
+
+        client = self._get_graph_client()
+        all_rows = []
+        batch_size = 200
+
+        for i in range(0, len(subscriptions), batch_size):
+            batch = subscriptions[i:i + batch_size]
+            batch_num = i // batch_size + 1
+            total_batches = (len(subscriptions) + batch_size - 1) // batch_size
+
+            if total_batches > 1:
+                logger.info("Querying batch %d of %d (%d subscriptions)",
+                            batch_num, total_batches, len(batch))
+
+            skip_token = None
+            page = 0
+
+            while True:
+                try:
+                    options = QueryRequestOptions(
+                        skip_token=skip_token
+                    ) if skip_token else None
+
+                    query = QueryRequest(
+                        subscriptions=batch,
+                        query=query_str,
+                        options=options
+                    )
+
+                    result = client.resources(query)
+                    rows = result.data or []
+                    all_rows.extend(rows)
+
+                    page += 1
+                    if page > 1:
+                        logger.info("  Fetched page %d (%d rows so far)", page, len(all_rows))
+
+                    skip_token = result.skip_token
+                    if not skip_token:
+                        break
+
+                except Exception as e:
+                    logger.error("Error querying Resource Graph (batch %d, page %d): %s",
+                                 batch_num, page + 1, e)
+                    self._errors_encountered = True
+                    break
+
+        return all_rows
 
     def collect(self) -> List[Dict]:
         """
@@ -173,62 +234,40 @@ class AzureCollector(BaseCollector):
             logger.warning("No subscriptions to query")
             return []
 
-        client = self._get_graph_client()
-
-        # Resource Graph query to count resources by type, subscription, and location
         query_str = """
         Resources
         | summarize count() by type, subscriptionId, location
         | order by count_ desc
         """
 
-        from azure.mgmt.resourcegraph.models import QueryRequest
+        rows = self._query_resource_graph(query_str, subscriptions)
 
         inventory = []
+        for row in rows:
+            resource_type = row.get('type', '').lower()
+            subscription_id = row.get('subscriptionId', '')
+            location = row.get('location', 'global')
+            count = row.get('count_', 0)
 
-        # Process in batches of 200 subscriptions (Resource Graph limit)
-        batch_size = 200
-        total_batches = (len(subscriptions) + batch_size - 1) // batch_size
-
-        for i in range(0, len(subscriptions), batch_size):
-            batch = subscriptions[i:i + batch_size]
-            batch_num = i // batch_size + 1
-            if total_batches > 1:
-                logger.info("Querying batch %d of %d (%d subscriptions)",
-                            batch_num, total_batches, len(batch))
-
-            query = QueryRequest(
-                subscriptions=batch,
-                query=query_str
+            record = self.create_inventory_record(
+                account_id=subscription_id,
+                region=location,
+                resource_type=resource_type,
+                count=count
             )
+            inventory.append(record)
 
-            try:
-                result = client.resources(query)
-
-                for row in result.data:
-                    resource_type = row.get('type', '').lower()
-                    subscription_id = row.get('subscriptionId', '')
-                    location = row.get('location', 'global')
-                    count = row.get('count_', 0)
-
-                    record = self.create_inventory_record(
-                        account_id=subscription_id,
-                        region=location,
-                        resource_type=resource_type,
-                        count=count
-                    )
-                    inventory.append(record)
-
-            except Exception as e:
-                logger.error("Error querying batch: %s", e)
-                continue
-
-        # Also get VMSS instances (requires separate query)
         vmss_inventory = self._collect_vmss_instances(subscriptions)
         inventory.extend(vmss_inventory)
 
         self._inventory = inventory
         logger.info("Collected %d inventory records from Azure", len(inventory))
+
+        if self._errors_encountered:
+            logger.warning(
+                "Some queries encountered errors. Results may be incomplete. "
+                "Re-run with --verbose for details."
+            )
 
         return inventory
 
@@ -244,56 +283,34 @@ class AzureCollector(BaseCollector):
         Returns:
             List of inventory records for VMSS instances.
         """
-        client = self._get_graph_client()
-
-        # Query for VMSS instance count
         query_str = """
         ComputeResources
         | where type == 'microsoft.compute/virtualmachinescalesets/virtualmachines'
         | summarize count() by subscriptionId, location
         """
 
-        from azure.mgmt.resourcegraph.models import QueryRequest
+        rows = self._query_resource_graph(query_str, subscriptions)
 
         inventory = []
-        batch_size = 200
+        for row in rows:
+            subscription_id = row.get('subscriptionId', '')
+            location = row.get('location', 'global')
+            count = row.get('count_', 0)
 
-        for i in range(0, len(subscriptions), batch_size):
-            batch = subscriptions[i:i + batch_size]
-
-            query = QueryRequest(
-                subscriptions=batch,
-                query=query_str
-            )
-
-            try:
-                result = client.resources(query)
-
-                for row in result.data:
-                    subscription_id = row.get('subscriptionId', '')
-                    location = row.get('location', 'global')
-                    count = row.get('count_', 0)
-
-                    if count > 0:
-                        record = self.create_inventory_record(
-                            account_id=subscription_id,
-                            region=location,
-                            resource_type='microsoft.compute/virtualmachinescalesets/virtualmachines',
-                            count=count
-                        )
-                        inventory.append(record)
-
-            except Exception as e:
-                # VMSS instances query may fail on some subscriptions
-                logger.debug("VMSS query failed for batch: %s", e)
-                continue
+            if count > 0:
+                record = self.create_inventory_record(
+                    account_id=subscription_id,
+                    region=location,
+                    resource_type='microsoft.compute/virtualmachinescalesets/virtualmachines',
+                    count=count
+                )
+                inventory.append(record)
 
         return inventory
 
 
 def collect_azure(
     subscriptions: List[str] = None,
-    resource_mappings: Dict = None,
     output_path: str = None
 ) -> List[Dict]:
     """
@@ -301,14 +318,12 @@ def collect_azure(
     
     Args:
         subscriptions: Optional list of subscription IDs.
-        resource_mappings: Optional resource type mappings.
         output_path: Optional path to save inventory JSON.
         
     Returns:
         List of inventory records.
     """
     collector = AzureCollector(
-        resource_mappings=resource_mappings,
         subscription_ids=subscriptions
     )
 

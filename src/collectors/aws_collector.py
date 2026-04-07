@@ -39,7 +39,6 @@ class AWSCollector(BaseCollector):
 
     def __init__(
         self,
-        resource_mappings: Dict = None,
         profile_name: str = None,
         region: str = "us-east-1",
         use_organizations: bool = False,
@@ -49,13 +48,12 @@ class AWSCollector(BaseCollector):
         Initialize the AWS collector.
         
         Args:
-            resource_mappings: Optional dict mapping resource types to categories.
             profile_name: AWS profile name to use for credentials.
             region: Region for Resource Explorer API calls (default: us-east-1).
             use_organizations: Whether to collect across all org accounts.
             organization_role: IAM role name to assume in member accounts.
         """
-        super().__init__(resource_mappings)
+        super().__init__()
         self.profile_name = profile_name
         self.region = region
         self.use_organizations = use_organizations
@@ -64,6 +62,7 @@ class AWSCollector(BaseCollector):
         self._account_id = None
         self._aggregator_region = None
         self._local_index_regions = []
+        self._errors_encountered = False
 
     def _get_session(self, profile_name: str = None, credentials: Dict = None):
         """Get boto3 session."""
@@ -107,23 +106,19 @@ class AWSCollector(BaseCollector):
         try:
             session = self._get_default_session()
 
-            # Log profile being used
             if self.profile_name:
                 logger.info("Using AWS profile: %s", self.profile_name)
 
-            # Verify identity
             sts = session.client('sts')
             identity = sts.get_caller_identity()
             self._account_id = identity['Account']
             logger.info("Authenticated as: %s", identity['Arn'])
 
-            # Check if Resource Explorer is available (required)
             rex = session.client('resource-explorer-2')
 
             try:
-                # Try to list indexes to verify Resource Explorer is enabled
-                indexes = rex.list_indexes()
-                if not indexes.get('Indexes'):
+                indexes = self._list_all_indexes(rex)
+                if not indexes:
                     logger.error(
                         "AWS Resource Explorer is not enabled. "
                         "This tool requires Resource Explorer to collect resources. "
@@ -131,39 +126,7 @@ class AWSCollector(BaseCollector):
                     )
                     return False
 
-                # Find the aggregator index for cross-region queries
-                aggregator_region = None
-                local_regions = []
-                for idx in indexes.get('Indexes', []):
-                    idx_type = idx.get('Type', 'LOCAL')
-                    idx_region = idx.get('Region', '')
-                    if idx_type == 'AGGREGATOR':
-                        aggregator_region = idx_region
-                    else:
-                        local_regions.append(idx_region)
-
-                # Store for use during collection
-                self._local_index_regions = sorted(local_regions)
-
-                if aggregator_region:
-                    logger.info(
-                        "Found Resource Explorer aggregator in %s",
-                        aggregator_region
-                    )
-                    logger.info(
-                        "Will query aggregator for all %d indexed regions",
-                        len(local_regions) + 1  # aggregator region is also indexed
-                    )
-                    self._aggregator_region = aggregator_region
-                else:
-                    logger.info(
-                        "No aggregator index found - will query %d regional indexes",
-                        len(local_regions)
-                    )
-                    if local_regions:
-                        logger.info("Indexed regions: %s", ", ".join(sorted(local_regions)))
-                    self._aggregator_region = None
-
+                self._apply_index_topology(indexes)
                 return True
 
             except rex.exceptions.AccessDeniedException:
@@ -174,9 +137,69 @@ class AWSCollector(BaseCollector):
                 )
                 return False
 
+        except ImportError:
+            raise
         except Exception as e:
             logger.error("Permission validation failed: %s", e)
             return False
+
+    def _list_all_indexes(self, rex_client) -> List[Dict]:
+        """List all Resource Explorer indexes with pagination."""
+        indexes = []
+        next_token = None
+
+        while True:
+            params = {}
+            if next_token:
+                params['NextToken'] = next_token
+
+            response = rex_client.list_indexes(**params)
+            indexes.extend(response.get('Indexes', []))
+
+            next_token = response.get('NextToken')
+            if not next_token:
+                break
+
+        return indexes
+
+    def _apply_index_topology(self, indexes: List[Dict]):
+        """
+        Parse index list and store aggregator/local region info.
+        
+        Args:
+            indexes: List of index dicts from list_indexes API.
+        """
+        aggregator_region = None
+        local_regions = []
+
+        for idx in indexes:
+            idx_type = idx.get('Type', 'LOCAL')
+            idx_region = idx.get('Region', '')
+            if idx_type == 'AGGREGATOR':
+                aggregator_region = idx_region
+            else:
+                local_regions.append(idx_region)
+
+        self._local_index_regions = sorted(local_regions)
+
+        if aggregator_region:
+            logger.info(
+                "Found Resource Explorer aggregator in %s",
+                aggregator_region
+            )
+            logger.info(
+                "Will query aggregator for all %d indexed regions",
+                len(local_regions) + 1
+            )
+            self._aggregator_region = aggregator_region
+        else:
+            logger.info(
+                "No aggregator index found - will query %d regional indexes",
+                len(local_regions)
+            )
+            if local_regions:
+                logger.info("Indexed regions: %s", ", ".join(sorted(local_regions)))
+            self._aggregator_region = None
 
     def get_account_id(self) -> str:
         """
@@ -191,32 +214,33 @@ class AWSCollector(BaseCollector):
             self._account_id = sts.get_caller_identity()['Account']
         return self._account_id
 
-    def _collect_via_resource_explorer(self, session, account_id: str) -> List[Dict]:
+    def _collect_via_resource_explorer(
+        self, session, account_id: str,
+        aggregator_region: str = None,
+        local_index_regions: List[str] = None
+    ) -> List[Dict]:
         """
         Collect resources using AWS Resource Explorer ListResources API.
         
         Uses the aggregator index if available for cross-region queries,
         otherwise queries each regional index individually.
         
-        Note: We use ListResources instead of Search because the Search API
-        has a hard limit of 1000 results. ListResources supports true pagination.
-        See: https://docs.aws.amazon.com/resource-explorer/latest/apireference/API_ListResources.html
+        Args:
+            session: boto3 session to use.
+            account_id: AWS account ID for labeling records.
+            aggregator_region: Region with the aggregator index, if any.
+            local_index_regions: Regions with local indexes.
         """
-        # Determine which regions to query
-        if self._aggregator_region:
-            # Single query to aggregator gets all regions
-            regions_to_query = [self._aggregator_region]
-            logger.info("Querying aggregator index in %s", self._aggregator_region)
-        elif self._local_index_regions:
-            # No aggregator - query each regional index
-            regions_to_query = self._local_index_regions
+        if aggregator_region:
+            regions_to_query = [aggregator_region]
+            logger.info("Querying aggregator index in %s", aggregator_region)
+        elif local_index_regions:
+            regions_to_query = local_index_regions
             logger.info("Querying %d regional indexes...", len(regions_to_query))
         else:
-            # Fallback to configured region only
             regions_to_query = [self.region]
             logger.warning("No index information available, querying %s only", self.region)
 
-        # Count resources by type and region
         resource_counts = {}
         total_resources = 0
         regions_queried = 0
@@ -225,7 +249,6 @@ class AWSCollector(BaseCollector):
             for query_region in regions_to_query:
                 regions_queried += 1
 
-                # Log progress when querying multiple regions
                 if len(regions_to_query) > 1:
                     logger.info(
                         "Querying region %d/%d: %s",
@@ -234,8 +257,6 @@ class AWSCollector(BaseCollector):
 
                 rex = session.client('resource-explorer-2', region_name=query_region)
 
-                # Use ListResources API with pagination (no 1000 result limit)
-                # MaxResults must be < 1000 to ensure NextToken is returned
                 next_token = None
 
                 while True:
@@ -253,7 +274,6 @@ class AWSCollector(BaseCollector):
                         resource_counts[key] = resource_counts.get(key, 0) + 1
                         total_resources += 1
 
-                    # Log progress for large inventories
                     if total_resources > 0 and total_resources % 5000 == 0:
                         logger.info("Scanned %d resources so far...", total_resources)
 
@@ -261,14 +281,12 @@ class AWSCollector(BaseCollector):
                     if not next_token:
                         break
 
-            # Summary log
             unique_regions = set(r for (_, r) in resource_counts)
             logger.info(
                 "Scanned %d resources across %d regions",
                 total_resources, len(unique_regions)
             )
 
-            # Convert counts to inventory records
             inventory = []
             for (resource_type, region), count in resource_counts.items():
                 record = self.create_inventory_record(
@@ -283,6 +301,7 @@ class AWSCollector(BaseCollector):
 
         except Exception as e:
             logger.error("Resource Explorer list_resources failed: %s", e)
+            self._errors_encountered = True
             return []
 
     def _get_org_accounts(self) -> List[Dict]:
@@ -320,11 +339,41 @@ class AWSCollector(BaseCollector):
             logger.warning("Failed to assume role in account %s: %s", account_id, e)
             return None
 
+    def _discover_account_indexes(self, session) -> tuple:
+        """
+        Discover Resource Explorer index topology for an account.
+        
+        Returns:
+            Tuple of (aggregator_region, local_index_regions) or (None, [])
+            if Resource Explorer is not enabled.
+        """
+        try:
+            rex = session.client('resource-explorer-2', region_name=self.region)
+            indexes = self._list_all_indexes(rex)
+
+            if not indexes:
+                return None, []
+
+            aggregator_region = None
+            local_regions = []
+
+            for idx in indexes:
+                idx_type = idx.get('Type', 'LOCAL')
+                idx_region = idx.get('Region', '')
+                if idx_type == 'AGGREGATOR':
+                    aggregator_region = idx_region
+                else:
+                    local_regions.append(idx_region)
+
+            return aggregator_region, sorted(local_regions)
+
+        except Exception as e:
+            logger.warning("Failed to discover indexes: %s", e)
+            return None, []
+
     def collect(self) -> List[Dict]:
         """
         Collect AWS resources.
-        
-        Uses Resource Explorer if available, otherwise falls back to direct API calls.
         
         Returns:
             List of inventory records.
@@ -334,7 +383,6 @@ class AWSCollector(BaseCollector):
         all_inventory = []
 
         if self.use_organizations and self.organization_role:
-            # Collect across organization
             accounts = self._get_org_accounts()
             logger.info("Collecting from %d organization accounts", len(accounts))
 
@@ -344,34 +392,51 @@ class AWSCollector(BaseCollector):
                 logger.info("Processing account: %s (%s)", account_name, account_id)
 
                 if account_id == self.get_account_id():
-                    # Current account, use default session
                     session = self._get_default_session()
+                    agg_region = self._aggregator_region
+                    local_regions = self._local_index_regions
                 else:
-                    # Assume role in member account
                     credentials = self._assume_role(account_id, self.organization_role)
                     if not credentials:
+                        self._errors_encountered = True
                         continue
                     session = self._get_session(credentials=credentials)
 
-                # Collect from this account
-                inventory = self._collect_from_account(session, account_id)
+                    # Discover this member account's own index topology
+                    agg_region, local_regions = self._discover_account_indexes(session)
+                    if not agg_region and not local_regions:
+                        logger.warning(
+                            "Resource Explorer not enabled in account %s (%s) - skipping",
+                            account_name, account_id
+                        )
+                        continue
+
+                inventory = self._collect_via_resource_explorer(
+                    session, account_id,
+                    aggregator_region=agg_region,
+                    local_index_regions=local_regions
+                )
                 all_inventory.extend(inventory)
         else:
-            # Single account collection
             session = self._get_default_session()
             account_id = self.get_account_id()
             logger.info("Collecting from account: %s", account_id)
-            all_inventory = self._collect_from_account(session, account_id)
+            all_inventory = self._collect_via_resource_explorer(
+                session, account_id,
+                aggregator_region=self._aggregator_region,
+                local_index_regions=self._local_index_regions
+            )
 
         self._inventory = all_inventory
         logger.info("Collected %d inventory records from AWS", len(all_inventory))
 
-        return all_inventory
+        if self._errors_encountered:
+            logger.warning(
+                "Some accounts/regions encountered errors. Results may be incomplete. "
+                "Re-run with --verbose for details."
+            )
 
-    def _collect_from_account(self, session, account_id: str) -> List[Dict]:
-        """Collect resources from a single AWS account using Resource Explorer."""
-        logger.info("Querying Resource Explorer for account %s", account_id)
-        return self._collect_via_resource_explorer(session, account_id)
+        return all_inventory
 
 
 def collect_aws(
@@ -379,7 +444,6 @@ def collect_aws(
     region: str = "us-east-1",
     use_organizations: bool = False,
     organization_role: str = None,
-    resource_mappings: Dict = None,
     output_path: str = None
 ) -> List[Dict]:
     """
@@ -390,14 +454,12 @@ def collect_aws(
         region: AWS region for API calls.
         use_organizations: Whether to collect across org accounts.
         organization_role: IAM role to assume in member accounts.
-        resource_mappings: Optional resource type mappings.
         output_path: Optional path to save inventory JSON.
         
     Returns:
         List of inventory records.
     """
     collector = AWSCollector(
-        resource_mappings=resource_mappings,
         profile_name=profile,
         region=region,
         use_organizations=use_organizations,

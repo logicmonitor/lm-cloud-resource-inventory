@@ -23,24 +23,29 @@ except ImportError:
 
 console = Console()
 
+# Maps provider -> set of relevant option names
+PROVIDER_OPTIONS = {
+    'aws': {'profile', 'region', 'organization'},
+    'azure': {'subscription'},
+    'gcp': {'project', 'organization'},
+    'oci': {'compartment'},
+}
+
 
 def setup_logging(verbose: bool = False):
     """Configure logging with rich output."""
-    # Configure our application logger only (not root logger)
     app_logger = logging.getLogger('src')
     app_logger.setLevel(logging.DEBUG if verbose else logging.INFO)
 
-    # Add rich handler if not already added
     if not app_logger.handlers:
         handler = RichHandler(
             console=console,
             rich_tracebacks=True,
-            omit_repeated_times=False  # Show timestamp on every log line
+            omit_repeated_times=False
         )
         handler.setFormatter(logging.Formatter("%(message)s"))
         app_logger.addHandler(handler)
 
-    # Suppress noisy third-party SDK loggers
     noisy_loggers = [
         'azure', 'azure.core', 'azure.identity', 'azure.mgmt',
         'urllib3', 'msrest', 'msal',
@@ -51,6 +56,32 @@ def setup_logging(verbose: bool = False):
     ]
     for logger_name in noisy_loggers:
         logging.getLogger(logger_name).setLevel(logging.WARNING)
+
+
+def _warn_irrelevant_options(provider: str, **options):
+    """Warn if provider-irrelevant options are supplied."""
+    relevant = PROVIDER_OPTIONS.get(provider, set())
+    for name, value in options.items():
+        if value and name not in relevant:
+            has_value = value if not isinstance(value, tuple) else bool(value)
+            if has_value:
+                console.print(
+                    f"[yellow]Warning: --{name} is not used with provider '{provider}' and will be ignored[/yellow]"
+                )
+
+
+def _derive_path(base_path: str, suffix: str, new_ext: str = None) -> str:
+    """
+    Derive a related output path from a base path.
+    
+    Inserts suffix before the extension. Optionally changes the extension.
+    E.g. _derive_path("out.csv", "_detailed") -> "out_detailed.csv"
+         _derive_path("out.csv", "_inventory", ".json") -> "out_inventory.json"
+    """
+    p = Path(base_path)
+    stem = p.stem
+    ext = new_ext if new_ext else p.suffix
+    return str(p.with_name(f"{stem}{suffix}{ext}"))
 
 
 @click.group()
@@ -103,6 +134,13 @@ def collect(
       
       lm-cloud-inventory collect -p oci --compartment ocid.compartment...
     """
+    _warn_irrelevant_options(
+        provider,
+        profile=profile, region=region if region != 'us-east-1' else None,
+        subscription=subscription, project=project,
+        organization=organization, compartment=compartment
+    )
+
     console.print(f"\n[bold blue]Collecting {provider.upper()} resources...[/bold blue]\n")
 
     try:
@@ -159,7 +197,6 @@ def collect(
 
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        # Only show traceback in verbose mode
         if logging.getLogger('src').level == logging.DEBUG:
             logging.exception("Collection failed")
         sys.exit(1)
@@ -194,29 +231,26 @@ def calculate(
     try:
         from .calculator import LicenseCalculator
 
-        # Load inventory
         with open(input_path, 'r', encoding='utf-8') as f:
             inventory = json.load(f)
 
-        # Create calculator with default config
+        if not isinstance(inventory, list):
+            console.print("[red]Error: Inventory file must contain a JSON array of records.[/red]")
+            sys.exit(1)
+
         calculator = LicenseCalculator.from_config_files()
 
-        # Calculate
         results = calculator.calculate(inventory)
 
-        # Save summary
         calculator.save_summary_csv(results, output)
 
-        # Save detailed if requested
         if detailed:
-            detailed_path = output.replace('.csv', '_detailed.csv')
+            detailed_path = _derive_path(output, '_detailed')
             calculator.save_detailed_csv(results, detailed_path)
             console.print(f"[green]✓ Detailed results saved to {detailed_path}[/green]")
 
-        # Print summary
         calculator.print_summary(results)
 
-        # Show unmapped types if requested
         unmapped = calculator.get_unsupported_types()
         if show_unmapped and unmapped:
             console.print("\n[dim]Unmapped Resource Types (not counted toward licensing):[/dim]")
@@ -229,9 +263,12 @@ def calculate(
         console.print(f"[red]Error: Input file not found: {input_path}[/red]")
         sys.exit(1)
 
+    except json.JSONDecodeError as e:
+        console.print(f"[red]Error: Invalid JSON in {input_path}: {e}[/red]")
+        sys.exit(1)
+
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        # Only show traceback in verbose mode
         if logging.getLogger('src').level == logging.DEBUG:
             logging.exception("Calculation failed")
         sys.exit(1)
@@ -248,9 +285,11 @@ def calculate(
 @click.option('--show-unmapped', is_flag=True,
               help='List resource types not mapped to license categories')
 @click.option('--profile', help='AWS profile name')
+@click.option('--region', default='us-east-1', help='AWS region (default: us-east-1)')
 @click.option('--subscription', '-s', multiple=True,
               help='Azure subscription ID(s)')
 @click.option('--project', help='GCP project ID')
+@click.option('--organization', help='GCP organization ID or AWS organization role')
 @click.option('--compartment', help='OCI compartment OCID')
 def run(
     provider: str,
@@ -258,8 +297,10 @@ def run(
     detailed: bool,
     show_unmapped: bool,
     profile: Optional[str],
+    region: str,
     subscription: tuple,
     project: Optional[str],
+    organization: Optional[str],
     compartment: Optional[str]
 ):
     """
@@ -270,22 +311,37 @@ def run(
       lm-cloud-inventory run -p aws -o aws_summary.csv
       
       lm-cloud-inventory run -p azure -d --show-unmapped
+      
+      lm-cloud-inventory run -p aws --organization MyOrgRole --region us-west-2
     """
     import tempfile
+
+    _warn_irrelevant_options(
+        provider,
+        profile=profile, region=region if region != 'us-east-1' else None,
+        subscription=subscription, project=project,
+        organization=organization, compartment=compartment
+    )
 
     console.print(f"\n[bold blue]Running full inventory and calculation for {provider.upper()}...[/bold blue]\n")
 
     inventory = None
+    temp_inventory = None
 
     try:
-        # Collect to temp file
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             temp_inventory = f.name
 
-        # Run collection
         if provider == 'aws':
             from .collectors import collect_aws
-            inventory = collect_aws(profile=profile, output_path=temp_inventory)
+            use_org = bool(organization)
+            inventory = collect_aws(
+                profile=profile,
+                region=region,
+                use_organizations=use_org,
+                organization_role=organization if use_org else None,
+                output_path=temp_inventory
+            )
 
         elif provider == 'azure':
             from .collectors import collect_azure
@@ -294,36 +350,31 @@ def run(
 
         elif provider == 'gcp':
             from .collectors import collect_gcp
-            inventory = collect_gcp(project_id=project, output_path=temp_inventory)
+            inventory = collect_gcp(project_id=project, organization_id=organization, output_path=temp_inventory)
 
         elif provider == 'oci':
             from .collectors import collect_oci
             inventory = collect_oci(compartment_id=compartment, output_path=temp_inventory)
 
-        # Calculate licenses
         from .calculator import LicenseCalculator
 
         calculator = LicenseCalculator.from_config_files()
         results = calculator.calculate(inventory)
 
-        # Save outputs
         calculator.save_summary_csv(results, output)
 
         if detailed:
-            detailed_path = output.replace('.csv', '_detailed.csv')
+            detailed_path = _derive_path(output, '_detailed')
             calculator.save_detailed_csv(results, detailed_path)
             console.print(f"[green]✓ Detailed results saved to {detailed_path}[/green]")
 
-        # Also save raw inventory
-        inventory_path = output.replace('.csv', '_inventory.json')
+        inventory_path = _derive_path(output, '_inventory', '.json')
         with open(inventory_path, 'w', encoding='utf-8') as f:
             json.dump(inventory, f, indent=2, default=str)
         console.print(f"[green]✓ Raw inventory saved to {inventory_path}[/green]")
 
-        # Print summary
         calculator.print_summary(results)
 
-        # Show unmapped types if requested
         unmapped = calculator.get_unsupported_types()
         if show_unmapped and unmapped:
             console.print("\n[dim]Unmapped Resource Types (not counted toward licensing):[/dim]")
@@ -332,15 +383,25 @@ def run(
 
         console.print(f"\n[green]✓ Summary saved to {output}[/green]\n")
 
-        # Cleanup temp file
-        Path(temp_inventory).unlink(missing_ok=True)
+    except ImportError as e:
+        console.print(f"[red]Missing dependency: {e}[/red]")
+        console.print("[yellow]Install required packages with: pip install -r requirements.txt[/yellow]")
+        sys.exit(1)
+
+    except PermissionError as e:
+        console.print(f"[red]Permission error: {e}[/red]")
+        console.print("[yellow]See docs/PERMISSIONS.md for required permissions.[/yellow]")
+        sys.exit(1)
 
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        # Only show traceback in verbose mode
         if logging.getLogger('src').level == logging.DEBUG:
             logging.exception("Run failed")
         sys.exit(1)
+
+    finally:
+        if temp_inventory:
+            Path(temp_inventory).unlink(missing_ok=True)
 
 
 @cli.command()

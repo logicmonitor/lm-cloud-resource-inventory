@@ -25,11 +25,11 @@
   ],
   "no_charge_resources": {
     "aws": [
-      "AWS::WAF::WebACL",
-      "AWS::WAFv2::WebACL",
-      "AWS::Shield::Protection",
-      "AWS::TrustedAdvisor::Check",
-      "AWS::Connect::Instance"
+      "waf:*",
+      "wafv2:*",
+      "shield:*",
+      "trustedadvisor:*",
+      "connect:*"
     ],
     "azure": [
       "microsoft.advisor/recommendations",
@@ -46,7 +46,7 @@
     "rules": [
       {
         "provider": "aws",
-        "resource_type_pattern": "AWS::EKS::*",
+        "resource_type_pattern": "eks:*",
         "note": "For EKS with LM Container monitoring, count K8s pods instead of clusters"
       },
       {
@@ -77,4 +77,3 @@
     }
   }
 }
-
