@@ -1,9 +1,9 @@
 """OCI Search Service collector for resource inventory."""
 
 import logging
-from typing import Dict, List
+from typing import Dict, List, Optional
 
-from .base import BaseCollector
+from .base import BaseCollector, require_import, retry_api_call
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +31,10 @@ class OCICollector(BaseCollector):
 
     def __init__(
         self,
-        compartment_id: str = None,
-        tenancy_id: str = None,
-        config_file: str = None,
-        config_profile: str = "DEFAULT"
+        compartment_id: Optional[str] = None,
+        tenancy_id: Optional[str] = None,
+        config_file: Optional[str] = None,
+        config_profile: str = "DEFAULT",
     ):
         """
         Initialize the OCI collector.
@@ -58,30 +58,24 @@ class OCICollector(BaseCollector):
     def _get_config(self):
         """Load OCI configuration."""
         if self._config is None:
-            try:
-                import oci
+            oci = require_import('oci', 'oci', 'oci')
 
-                if self.config_file:
-                    self._config = oci.config.from_file(
-                        file_location=self.config_file,
-                        profile_name=self.config_profile
-                    )
-                else:
-                    self._config = oci.config.from_file(
-                        profile_name=self.config_profile
-                    )
+            if self.config_file:
+                self._config = oci.config.from_file(
+                    file_location=self.config_file,
+                    profile_name=self.config_profile
+                )
+            else:
+                self._config = oci.config.from_file(
+                    profile_name=self.config_profile
+                )
 
-            except ImportError as exc:
-                raise ImportError(
-                    "oci package is required. "
-                    "Install with: pip install oci"
-                ) from exc
         return self._config
 
     def _get_search_client(self):
         """Get OCI Search Service client."""
         if self._search_client is None:
-            import oci
+            oci = require_import('oci', 'oci', 'oci')
             config = self._get_config()
             self._search_client = oci.resource_search.ResourceSearchClient(config)
         return self._search_client
@@ -89,7 +83,7 @@ class OCICollector(BaseCollector):
     def _get_identity_client(self):
         """Get OCI Identity client."""
         if self._identity_client is None:
-            import oci
+            oci = require_import('oci', 'oci', 'oci')
             config = self._get_config()
             self._identity_client = oci.identity.IdentityClient(config)
         return self._identity_client
@@ -113,7 +107,7 @@ class OCICollector(BaseCollector):
             True if permissions are available, False otherwise.
         """
         try:
-            import oci
+            oci = require_import('oci', 'oci', 'oci')
 
             logger.info("Using OCI config profile: %s", self.config_profile)
 
@@ -158,7 +152,7 @@ class OCICollector(BaseCollector):
         Returns:
             List of compartment OCIDs including parent.
         """
-        import oci
+        oci = require_import('oci', 'oci', 'oci')
 
         identity_client = self._get_identity_client()
         compartments = [parent_compartment_id]
@@ -180,24 +174,67 @@ class OCICollector(BaseCollector):
 
         return compartments
 
+    def _search_resource_type(self, search_client, oci_module,
+                              resource_type: str, compartment_id: str,
+                              resource_counts: Dict) -> int:
+        """Search a single resource type in one compartment and update counts."""
+        query = (
+            f"query {resource_type} resources "
+            f"where compartmentId = '{compartment_id}'"
+        )
+        search_details = oci_module.resource_search.models.StructuredSearchDetails(
+            query=query, type="Structured"
+        )
+
+        page = None
+        count = 0
+
+        while True:
+            if page:
+                response = retry_api_call(
+                    search_client.search_resources, search_details, page=page
+                )
+            else:
+                response = retry_api_call(
+                    search_client.search_resources, search_details
+                )
+
+            for item in (response.data.items or []):
+                region = getattr(item, 'region', None) or 'regional'
+                key = (resource_type, compartment_id, region)
+                resource_counts[key] = resource_counts.get(key, 0) + 1
+                count += 1
+
+            if response.has_next_page:
+                page = response.next_page
+            else:
+                break
+
+        return count
+
     def collect(self) -> List[Dict]:
         """
         Collect OCI resources using Search Service.
-        
+
         Returns:
             List of inventory records with resource counts.
         """
         logger.info("Starting OCI resource collection via Search Service")
+        self._errors_encountered = False
 
-        import oci
+        oci = require_import('oci', 'oci', 'oci')
 
         search_client = self._get_search_client()
         root_compartment = self._get_root_compartment()
 
+        logger.info("Root compartment: %s", root_compartment)
         compartments = self._get_all_compartments(root_compartment)
-        logger.info("Discovered %d compartments to search", len(compartments))
+        logger.info(
+            "Discovered %d compartments to search (%d child compartments)",
+            len(compartments), len(compartments) - 1
+        )
 
-        resource_counts = {}
+        resource_counts: Dict = {}
         total_compartments = len(compartments)
 
         for comp_idx, compartment_id in enumerate(compartments, 1):
@@ -206,48 +243,17 @@ class OCICollector(BaseCollector):
 
             for resource_type in self.SUPPORTED_RESOURCE_TYPES:
                 try:
-                    query = (
-                        f"query {resource_type} resources "
-                        f"where compartmentId = '{compartment_id}'"
+                    count = self._search_resource_type(
+                        search_client, oci, resource_type,
+                        compartment_id, resource_counts
                     )
-
-                    search_details = oci.resource_search.models.StructuredSearchDetails(
-                        query=query,
-                        type="Structured"
-                    )
-
-                    page = None
-                    count = 0
-
-                    while True:
-                        if page:
-                            response = search_client.search_resources(
-                                search_details,
-                                page=page
-                            )
-                        else:
-                            response = search_client.search_resources(search_details)
-
-                        items = response.data.items or []
-
-                        for item in items:
-                            region = item.availability_domain or 'regional'
-                            key = (resource_type, compartment_id, region)
-                            resource_counts[key] = resource_counts.get(key, 0) + 1
-                            count += 1
-
-                        if response.has_next_page:
-                            page = response.next_page
-                        else:
-                            break
-
                     if count > 0:
-                        logger.debug("Found %d %s in compartment %s", count, resource_type, compartment_id)
-
+                        logger.debug("Found %d %s in compartment %s",
+                                     count, resource_type, compartment_id)
                 except Exception as e:
-                    logger.debug("Error querying %s in %s: %s", resource_type, compartment_id, e)
+                    logger.warning("Error querying %s in compartment %s: %s",
+                                   resource_type, compartment_id, e)
                     self._errors_encountered = True
-                    continue
 
         inventory = []
 
@@ -280,11 +286,11 @@ class OCICollector(BaseCollector):
 
 
 def collect_oci(
-    compartment_id: str = None,
-    tenancy_id: str = None,
-    config_file: str = None,
+    compartment_id: Optional[str] = None,
+    tenancy_id: Optional[str] = None,
+    config_file: Optional[str] = None,
     config_profile: str = "DEFAULT",
-    output_path: str = None
+    output_path: Optional[str] = None,
 ) -> List[Dict]:
     """
     Convenience function to collect OCI resources.

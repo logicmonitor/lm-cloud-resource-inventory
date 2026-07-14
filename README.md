@@ -15,7 +15,7 @@ This tool collects resource inventory from cloud providers and calculates LogicM
 ### Installation
 
 ```bash
-pip install lm-cloud-inventory
+python3 -m pip install "lm-cloud-inventory[all]"
 ```
 
 Or install from source:
@@ -23,7 +23,13 @@ Or install from source:
 ```bash
 git clone https://github.com/logicmonitor/lm-cloud-resource-inventory.git
 cd lm-cloud-resource-inventory
-pip install .
+python3 -m pip install ".[all]"
+```
+
+On Windows, use the Python 3 launcher so installation targets the same Python family used by the CLI:
+
+```powershell
+py -3 -m pip install "lm-cloud-inventory[all]"
 ```
 
 ### Basic Usage
@@ -63,6 +69,9 @@ lmci run -p <provider> [options]
 | `-d, --detailed` | All | Generate detailed CSV with per-region breakdown |
 | `--show-unmapped` | All | List resource types not mapped to license categories |
 | `--profile` | AWS | AWS CLI profile name |
+| `--region` | AWS | AWS region for API calls (default: `us-east-1`) |
+| `--organization` | AWS | IAM role name for cross-account access |
+| `--organization` | GCP | GCP organization ID for org-wide inventory |
 | `-s, --subscription` | Azure | Subscription ID (can be repeated for multiple) |
 | `--project` | GCP | GCP project ID |
 | `--compartment` | OCI | OCI compartment OCID |
@@ -132,6 +141,18 @@ lmci calculate -i <inventory.json> [options]
 | `-o, --output` | Output CSV file (default: `license_summary.csv`) |
 | `-d, --detailed` | Generate detailed CSV |
 | `--show-unmapped` | List unmapped resource types |
+
+### `check-deps` Command
+
+Verify that required SDK packages are installed and importable. The command also prints the Python interpreter and CLI path, which helps identify packages installed into a different Python environment.
+
+```bash
+# Check all providers
+lmci check-deps
+
+# Check a specific provider
+lmci check-deps -p azure
+```
 
 ### `permissions` Command
 
@@ -391,8 +412,20 @@ Ensure the policy allows: `Allow group <group> to inspect all-resources in tenan
 ### General: "ModuleNotFoundError"
 
 ```bash
-pip install .
+# Diagnose which dependencies are missing
+lmci check-deps
+
+# Install dependencies for a specific provider
+python3 -m pip install "lm-cloud-inventory[aws]"
+python3 -m pip install "lm-cloud-inventory[azure]"
+python3 -m pip install "lm-cloud-inventory[gcp]"
+python3 -m pip install "lm-cloud-inventory[oci]"
+
+# Or install all providers at once
+python3 -m pip install "lm-cloud-inventory[all]"
 ```
+
+On Windows, replace `python3 -m pip` with `py -3 -m pip`.
 
 ---
 

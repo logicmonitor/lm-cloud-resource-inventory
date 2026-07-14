@@ -8,7 +8,6 @@ with open("README.md", "r", encoding="utf-8") as fh:
 setup(
     name="lm-cloud-inventory",
     use_scm_version=True,
-    setup_requires=["setuptools-scm"],
     author="LogicMonitor",
     author_email="support@logicmonitor.com",
     description="Cloud resource inventory collection for LogicMonitor licensing",
@@ -16,6 +15,7 @@ setup(
     long_description_content_type="text/markdown",
     url="https://github.com/logicmonitor/lm-cloud-resource-inventory",
     packages=find_packages(include=["src", "src.*"]),
+    package_data={"src.config": ["*.json"]},
     classifiers=[
         "Development Status :: 5 - Production/Stable",
         "Intended Audience :: System Administrators",

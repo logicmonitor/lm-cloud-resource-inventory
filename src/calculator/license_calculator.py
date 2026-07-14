@@ -3,7 +3,8 @@
 import json
 import logging
 import math
-from typing import Dict, List, Set, Tuple
+from fnmatch import fnmatchcase
+from typing import Dict, List, Optional, Set, Tuple
 from collections import defaultdict
 
 logger = logging.getLogger(__name__)
@@ -28,12 +29,12 @@ class LicenseCalculator:
 
     def __init__(
         self,
-        resource_mappings: Dict = None,
-        license_rules: Dict = None
+        resource_mappings: Optional[Dict] = None,
+        license_rules: Optional[Dict] = None,
     ):
         """
         Initialize the license calculator.
-        
+
         Args:
             resource_mappings: Dict mapping resource types to categories.
             license_rules: Dict with license calculation rules.
@@ -45,8 +46,8 @@ class LicenseCalculator:
     @classmethod
     def from_config_files(
         cls,
-        mappings_path: str = None,
-        rules_path: str = None
+        mappings_path: Optional[str] = None,
+        rules_path: Optional[str] = None,
     ) -> 'LicenseCalculator':
         """
         Create a LicenseCalculator from configuration files.
@@ -102,32 +103,11 @@ class LicenseCalculator:
 
     def _matches_pattern(self, resource_type: str, pattern: str) -> bool:
         """
-        Check if resource type matches a pattern.
-        
-        Supports wildcards (*) for pattern matching.
-        
-        Args:
-            resource_type: Resource type to check.
-            pattern: Pattern with optional wildcards.
-            
-        Returns:
-            True if matches, False otherwise.
+        Check if resource type matches a pattern (case-insensitive).
+
+        Uses fnmatch-style wildcards (* and ?).
         """
-        if '*' not in pattern:
-            return resource_type == pattern
-
-        # Simple wildcard matching
-        if pattern.endswith('*'):
-            prefix = pattern[:-1]
-            return resource_type.startswith(prefix)
-
-        if pattern.startswith('*'):
-            suffix = pattern[1:]
-            return resource_type.endswith(suffix)
-
-        # Middle wildcard
-        parts = pattern.split('*')
-        return resource_type.startswith(parts[0]) and resource_type.endswith(parts[-1])
+        return fnmatchcase(resource_type.lower(), pattern.lower())
 
     def get_unsupported_types(self) -> Set[Tuple[str, str]]:
         """
@@ -167,6 +147,7 @@ class LicenseCalculator:
         Returns:
             Dict with summary and detailed results.
         """
+        self._unsupported_types = set()
         logger.info("Calculating license requirements from %d records", len(inventory))
 
         # Group by category
@@ -209,7 +190,7 @@ class LicenseCalculator:
 
         result = {
             'summary': {
-                'by_provider': dict(summary),
+                'by_provider': {k: dict(v) for k, v in summary.items()},
                 'totals': dict(totals),
                 'hybrid_units': hybrid_units
             },
@@ -231,6 +212,12 @@ class LicenseCalculator:
         """
         with open(input_path, 'r', encoding='utf-8') as f:
             inventory = json.load(f)
+
+        if not isinstance(inventory, list):
+            raise ValueError(
+                f"Inventory file must contain a JSON array of records, "
+                f"got {type(inventory).__name__}"
+            )
 
         return self.calculate(inventory)
 

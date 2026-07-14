@@ -1,9 +1,9 @@
 """Azure Resource Graph collector for resource inventory."""
 
 import logging
-from typing import Dict, List
+from typing import Dict, List, Optional
 
-from .base import BaseCollector
+from .base import BaseCollector, require_import, retry_api_call
 
 logger = logging.getLogger(__name__)
 
@@ -20,20 +20,17 @@ class AzureCollector(BaseCollector):
 
     def __init__(
         self,
-        subscription_ids: List[str] = None,
-        management_group_id: str = None
+        subscription_ids: Optional[List[str]] = None,
     ):
         """
         Initialize the Azure collector.
-        
+
         Args:
             subscription_ids: Optional list of subscription IDs to query.
                             If not provided, queries all accessible subscriptions.
-            management_group_id: Optional management group ID for scope.
         """
         super().__init__()
         self.subscription_ids = subscription_ids
-        self.management_group_id = management_group_id
         self._credential = None
         self._graph_client = None
         self._resource_client = None
@@ -43,27 +40,15 @@ class AzureCollector(BaseCollector):
     def _get_credential(self):
         """Get Azure credential using DefaultAzureCredential."""
         if self._credential is None:
-            try:
-                from azure.identity import DefaultAzureCredential
-                self._credential = DefaultAzureCredential()
-            except ImportError as exc:
-                raise ImportError(
-                    "azure-identity package is required. "
-                    "Install with: pip install azure-identity"
-                ) from exc
+            azure_identity = require_import('azure.identity', 'azure-identity', 'azure')
+            self._credential = azure_identity.DefaultAzureCredential()
         return self._credential
 
     def _get_graph_client(self):
         """Get Azure Resource Graph client."""
         if self._graph_client is None:
-            try:
-                from azure.mgmt.resourcegraph import ResourceGraphClient
-                self._graph_client = ResourceGraphClient(self._get_credential())
-            except ImportError as exc:
-                raise ImportError(
-                    "azure-mgmt-resourcegraph package is required. "
-                    "Install with: pip install azure-mgmt-resourcegraph"
-                ) from exc
+            azure_rg = require_import('azure.mgmt.resourcegraph', 'azure-mgmt-resourcegraph', 'azure')
+            self._graph_client = azure_rg.ResourceGraphClient(self._get_credential())
         return self._graph_client
 
     def _get_subscriptions(self) -> List[str]:
@@ -75,46 +60,51 @@ class AzureCollector(BaseCollector):
             List of subscription ID strings.
         """
         if self.subscription_ids:
+            count = len(self.subscription_ids)
+            shown = ", ".join(self.subscription_ids[:5])
+            if count <= 5:
+                logger.info("Using %d user-specified subscription(s): %s", count, shown)
+            else:
+                logger.info(
+                    "Using %d user-specified subscription(s): %s, and %d more",
+                    count, shown, count - 5
+                )
             return self.subscription_ids
 
-        try:
-            from azure.mgmt.resource import SubscriptionClient
-            sub_client = SubscriptionClient(self._get_credential())
-            subscriptions = []
-            self._subscription_info = []
+        azure_resource = require_import('azure.mgmt.resource', 'azure-mgmt-resource', 'azure')
+        sub_client = azure_resource.SubscriptionClient(self._get_credential())
+        subscriptions = []
+        self._subscription_info = []
 
-            for sub in sub_client.subscriptions.list():
-                if sub.state == "Enabled":
-                    subscriptions.append(sub.subscription_id)
-                    self._subscription_info.append({
-                        'id': sub.subscription_id,
-                        'name': sub.display_name or sub.subscription_id
-                    })
+        for sub in sub_client.subscriptions.list():
+            if sub.state == "Enabled":
+                subscriptions.append(sub.subscription_id)
+                self._subscription_info.append({
+                    'id': sub.subscription_id,
+                    'name': sub.display_name or sub.subscription_id
+                })
 
-            if self._subscription_info:
-                sub_names = [s['name'] for s in self._subscription_info]
-                if len(sub_names) <= 5:
-                    logger.info("Found %d subscriptions: %s",
-                                len(subscriptions), ", ".join(sub_names))
-                else:
-                    logger.info("Found %d subscriptions: %s, and %d more",
-                                len(subscriptions), ", ".join(sub_names[:5]), len(sub_names) - 5)
+        if self._subscription_info:
+            sub_names = [s['name'] for s in self._subscription_info]
+            if len(sub_names) <= 5:
+                logger.info("Found %d subscriptions: %s",
+                            len(subscriptions), ", ".join(sub_names))
+            else:
+                logger.info("Found %d subscriptions: %s, and %d more",
+                            len(subscriptions), ", ".join(sub_names[:5]), len(sub_names) - 5)
 
-            # Cache the discovered subscriptions to avoid redundant API calls
-            self.subscription_ids = subscriptions
-            return subscriptions
-        except ImportError as exc:
-            raise ImportError(
-                "azure-mgmt-resource package is required. "
-                "Install with: pip install azure-mgmt-resource"
-            ) from exc
+        self.subscription_ids = subscriptions
+        return subscriptions
 
     def validate_permissions(self) -> bool:
         """
-        Check if required permissions are available.
-        
+        Check if required permissions are available for all subscriptions.
+
+        Tests Resource Graph access against all provided/discovered subscriptions
+        and reports which are accessible vs inaccessible.
+
         Returns:
-            True if permissions are available, False otherwise.
+            True if at least one subscription is accessible, False otherwise.
         """
         try:
             credential = self._get_credential()
@@ -127,13 +117,37 @@ class AzureCollector(BaseCollector):
                 return False
 
             client = self._get_graph_client()
-            from azure.mgmt.resourcegraph.models import QueryRequest
-            query = QueryRequest(
-                subscriptions=subscriptions[:1],
-                query="Resources | take 1"
+            models = require_import('azure.mgmt.resourcegraph.models', 'azure-mgmt-resourcegraph', 'azure')
+
+            accessible = []
+            inaccessible = []
+
+            for sub_id in subscriptions:
+                try:
+                    query = models.QueryRequest(
+                        subscriptions=[sub_id],
+                        query="Resources | take 1"
+                    )
+                    client.resources(query)
+                    accessible.append(sub_id)
+                except Exception as e:
+                    logger.warning("No access to subscription %s: %s", sub_id, e)
+                    inaccessible.append(sub_id)
+
+            if inaccessible:
+                logger.warning(
+                    "%d of %d subscriptions are inaccessible and will be skipped",
+                    len(inaccessible), len(subscriptions)
+                )
+                self.subscription_ids = accessible
+
+            if not accessible:
+                logger.error("No accessible subscriptions found after validation")
+                return False
+
+            logger.info(
+                "Azure permissions validated for %d subscription(s)", len(accessible)
             )
-            client.resources(query)
-            logger.info("Azure permissions validated successfully")
             return True
 
         except ImportError:
@@ -168,9 +182,7 @@ class AzureCollector(BaseCollector):
         Returns:
             List of result row dicts.
         """
-        from azure.mgmt.resourcegraph.models import (
-            QueryRequest, QueryRequestOptions
-        )
+        models = require_import('azure.mgmt.resourcegraph.models', 'azure-mgmt-resourcegraph', 'azure')
 
         client = self._get_graph_client()
         all_rows = []
@@ -190,19 +202,37 @@ class AzureCollector(BaseCollector):
 
             while True:
                 try:
-                    options = QueryRequestOptions(
+                    options = models.QueryRequestOptions(
                         skip_token=skip_token
                     ) if skip_token else None
 
-                    query = QueryRequest(
+                    query = models.QueryRequest(
                         subscriptions=batch,
                         query=query_str,
                         options=options
                     )
 
-                    result = client.resources(query)
+                    result = retry_api_call(client.resources, query)
                     rows = result.data or []
                     all_rows.extend(rows)
+
+                    if getattr(result, 'result_truncated', None) == 'true':
+                        logger.warning(
+                            "Resource Graph result was truncated for batch %d; "
+                            "some data may be missing", batch_num
+                        )
+                        self._errors_encountered = True
+
+                    facets = getattr(result, 'facets', None) or []
+                    for facet in facets:
+                        errors = getattr(facet, 'errors', None) or []
+                        for error in errors:
+                            msg = getattr(error, 'message', str(error))
+                            logger.warning(
+                                "Resource Graph partial error (batch %d): %s",
+                                batch_num, msg
+                            )
+                            self._errors_encountered = True
 
                     page += 1
                     if page > 1:
@@ -228,6 +258,7 @@ class AzureCollector(BaseCollector):
             List of inventory records with resource counts by type and location.
         """
         logger.info("Starting Azure resource collection via Resource Graph")
+        self._errors_encountered = False
 
         subscriptions = self._get_subscriptions()
         if not subscriptions:
@@ -310,8 +341,8 @@ class AzureCollector(BaseCollector):
 
 
 def collect_azure(
-    subscriptions: List[str] = None,
-    output_path: str = None
+    subscriptions: Optional[List[str]] = None,
+    output_path: Optional[str] = None,
 ) -> List[Dict]:
     """
     Convenience function to collect Azure resources.

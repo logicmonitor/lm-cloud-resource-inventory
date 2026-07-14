@@ -3,10 +3,64 @@
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from typing import Dict, List
+import importlib
 import json
 import logging
+import random
+import sys
+import time
 
 logger = logging.getLogger(__name__)
+
+TRANSIENT_KEYWORDS = frozenset([
+    "throttl", "rate", "toomany", "429", "503", "retry",
+    "timeout", "temporarily", "unavailable", "connection",
+])
+
+
+def _is_transient(exc: Exception) -> bool:
+    """Heuristic check for transient/retriable errors based on common status codes and keywords."""
+    exc_str = str(exc).lower()
+    exc_type = type(exc).__name__.lower()
+    combined = f"{exc_type} {exc_str}"
+    return any(kw in combined for kw in TRANSIENT_KEYWORDS)
+
+
+def retry_api_call(func, *args, max_retries: int = 3, base_delay: float = 1.0, **kwargs):
+    """
+    Call *func* with retry + exponential backoff for transient errors.
+
+    Auth/permission errors are never retried.  The final attempt re-raises
+    the original exception so the caller's error handling is unchanged.
+    """
+    last_exc = None
+    for attempt in range(max_retries + 1):
+        try:
+            return func(*args, **kwargs)
+        except Exception as exc:
+            last_exc = exc
+            if attempt == max_retries or not _is_transient(exc):
+                raise
+            delay = base_delay * (2 ** attempt) + random.uniform(0, 0.5)
+            logger.warning(
+                "Transient error (attempt %d/%d), retrying in %.1fs: %s",
+                attempt + 1, max_retries + 1, delay, exc
+            )
+            time.sleep(delay)
+    raise last_exc  # unreachable, satisfies type checker
+
+
+def require_import(module_path: str, package_name: str, provider: str):
+    """Import a module or raise a helpful ImportError with install instructions."""
+    try:
+        return importlib.import_module(module_path)
+    except ImportError as exc:
+        raise ImportError(
+            f"{package_name} is required. "
+            f"Install with: \"{sys.executable}\" -m pip install "
+            f"\"lm-cloud-inventory[{provider}]\"\n"
+            f"  Underlying error: {exc}"
+        ) from exc
 
 
 class BaseCollector(ABC):
@@ -94,7 +148,7 @@ class BaseCollector(ABC):
             output_path: Path to output file.
             inventory: Optional inventory list. Uses self._inventory if not provided.
         """
-        data = inventory or self._inventory
+        data = inventory if inventory is not None else self._inventory
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, default=str)
         logger.info("Saved inventory to %s", output_path)
@@ -106,7 +160,7 @@ class BaseCollector(ABC):
         Args:
             inventory: Optional inventory list. Uses self._inventory if not provided.
         """
-        data = inventory or self._inventory
+        data = inventory if inventory is not None else self._inventory
 
         type_counts = {}
         total_resources = 0

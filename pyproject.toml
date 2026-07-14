@@ -9,6 +9,18 @@ description = "Cloud resource inventory collection for LogicMonitor licensing"
 readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "MIT"}
+authors = [{name = "LogicMonitor", email = "support@logicmonitor.com"}]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
 dependencies = [
     "click>=8.3.1",
     "rich>=14.2.0",
@@ -35,6 +47,9 @@ all = [
 [project.scripts]
 lm-cloud-inventory = "src.cli:main"
 lmci = "src.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/logicmonitor/lm-cloud-resource-inventory"
 
 [tool.setuptools.packages.find]
 where = ["."]

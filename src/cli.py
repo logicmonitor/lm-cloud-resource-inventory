@@ -7,6 +7,8 @@ AWS, Azure, GCP, and OCI for LogicMonitor licensing.
 
 import json
 import logging
+import re
+import shutil
 import sys
 from pathlib import Path
 from typing import Optional
@@ -17,8 +19,9 @@ try:
     import click
     from rich.console import Console
     from rich.logging import RichHandler
+    from rich.markup import escape
 except ImportError:
-    print("Required packages not installed. Run: pip install click rich")
+    print(f'Required packages not installed. Run: "{sys.executable}" -m pip install click rich')
     sys.exit(1)
 
 console = Console()
@@ -29,6 +32,17 @@ PROVIDER_OPTIONS = {
     'azure': {'subscription'},
     'gcp': {'project', 'organization'},
     'oci': {'compartment'},
+}
+
+PROVIDER_DEPENDENCIES = {
+    'aws': [('boto3', 'boto3')],
+    'azure': [
+        ('azure-identity', 'azure.identity'),
+        ('azure-mgmt-resourcegraph', 'azure.mgmt.resourcegraph'),
+        ('azure-mgmt-resource', 'azure.mgmt.resource'),
+    ],
+    'gcp': [('google-cloud-asset', 'google.cloud.asset_v1')],
+    'oci': [('oci', 'oci')],
 }
 
 
@@ -62,12 +76,10 @@ def _warn_irrelevant_options(provider: str, **options):
     """Warn if provider-irrelevant options are supplied."""
     relevant = PROVIDER_OPTIONS.get(provider, set())
     for name, value in options.items():
-        if value and name not in relevant:
-            has_value = value if not isinstance(value, tuple) else bool(value)
-            if has_value:
-                console.print(
-                    f"[yellow]Warning: --{name} is not used with provider '{provider}' and will be ignored[/yellow]"
-                )
+        if name not in relevant and (value if not isinstance(value, tuple) else bool(value)):
+            console.print(
+                f"[yellow]Warning: --{name} is not used with provider '{provider}' and will be ignored[/yellow]"
+            )
 
 
 def _derive_path(base_path: str, suffix: str, new_ext: str = None) -> str:
@@ -82,6 +94,83 @@ def _derive_path(base_path: str, suffix: str, new_ext: str = None) -> str:
     stem = p.stem
     ext = new_ext if new_ext else p.suffix
     return str(p.with_name(f"{stem}{suffix}{ext}"))
+
+
+def _get_install_hint(provider: str) -> str:
+    """Get the install command hint for a provider."""
+    package = f"lm-cloud-inventory[{provider}]"
+    return f'"{sys.executable}" -m pip install "{package}"'
+
+
+def _get_all_install_hint() -> str:
+    """Get an install command that targets the interpreter running the CLI."""
+    return f'"{sys.executable}" -m pip install "lm-cloud-inventory[all]"'
+
+
+_UUID_RE = re.compile(
+    r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE
+)
+_GCP_PROJECT_RE = re.compile(r'^[a-z][a-z0-9-]{4,28}[a-z0-9]$')
+_OCID_PREFIX = 'ocid1.'
+
+
+def _validate_ids(provider: str, **kwargs):
+    """Warn about IDs that don't match the expected format for a provider."""
+    if provider == 'azure':
+        subs = kwargs.get('subscription')
+        if subs:
+            for sub in subs:
+                if not _UUID_RE.match(sub):
+                    console.print(
+                        f"[yellow]Warning: '{sub}' does not look like a valid "
+                        f"Azure subscription GUID[/yellow]"
+                    )
+    elif provider == 'gcp':
+        project = kwargs.get('project')
+        if project and not _GCP_PROJECT_RE.match(project):
+            console.print(
+                f"[yellow]Warning: '{project}' does not look like a valid "
+                f"GCP project ID (expected lowercase alphanumeric + hyphens, 6-30 chars)[/yellow]"
+            )
+    elif provider == 'oci':
+        compartment = kwargs.get('compartment')
+        if compartment and not compartment.startswith(_OCID_PREFIX):
+            console.print(
+                f"[yellow]Warning: '{compartment}' does not look like a valid "
+                f"OCI OCID (expected to start with '{_OCID_PREFIX}')[/yellow]"
+            )
+
+
+def _dispatch_collect(provider: str, output_path: str, **kwargs):
+    """Dispatch to the correct collector based on provider name."""
+    _validate_ids(provider, **kwargs)
+
+    if provider == 'aws':
+        from .collectors import collect_aws  # pylint: disable=no-name-in-module
+        use_org = bool(kwargs.get('organization'))
+        return collect_aws(
+            profile=kwargs.get('profile'),
+            region=kwargs.get('region', 'us-east-1'),
+            use_organizations=use_org,
+            organization_role=kwargs['organization'] if use_org else None,
+            output_path=output_path,
+        )
+    elif provider == 'azure':
+        from .collectors import collect_azure  # pylint: disable=no-name-in-module
+        subs = list(kwargs['subscription']) if kwargs.get('subscription') else None
+        return collect_azure(subscriptions=subs, output_path=output_path)
+    elif provider == 'gcp':
+        from .collectors import collect_gcp  # pylint: disable=no-name-in-module
+        return collect_gcp(
+            project_id=kwargs.get('project'),
+            organization_id=kwargs.get('organization'),
+            output_path=output_path,
+        )
+    elif provider == 'oci':
+        from .collectors import collect_oci  # pylint: disable=no-name-in-module
+        return collect_oci(compartment_id=kwargs.get('compartment'), output_path=output_path)
+
+    raise ValueError(f"Unknown provider: {provider}")
 
 
 @click.group()
@@ -144,50 +233,22 @@ def collect(
     console.print(f"\n[bold blue]Collecting {provider.upper()} resources...[/bold blue]\n")
 
     try:
-        if provider == 'aws':
-            from .collectors import collect_aws
-
-            use_org = bool(organization)
-            collect_aws(
-                profile=profile,
-                region=region,
-                use_organizations=use_org,
-                organization_role=organization if use_org else None,
-                output_path=output
-            )
-
-        elif provider == 'azure':
-            from .collectors import collect_azure
-
-            subscription_ids = list(subscription) if subscription else None
-            collect_azure(
-                subscriptions=subscription_ids,
-                output_path=output
-            )
-
-        elif provider == 'gcp':
-            from .collectors import collect_gcp
-
-            collect_gcp(
-                project_id=project,
-                organization_id=organization,
-                output_path=output
-            )
-
-        elif provider == 'oci':
-            from .collectors import collect_oci
-
-            collect_oci(
-                compartment_id=compartment,
-                output_path=output
-            )
+        _dispatch_collect(
+            provider, output,
+            profile=profile, region=region,
+            subscription=subscription, project=project,
+            organization=organization, compartment=compartment,
+        )
 
         console.print(f"\n[green]✓ Inventory saved to {output}[/green]")
         console.print(f"[dim]Run 'lm-cloud-inventory calculate -i {output}' to generate license summary[/dim]\n")
 
     except ImportError as e:
-        console.print(f"[red]Missing dependency: {e}[/red]")
-        console.print("[yellow]Install required packages with: pip install -r requirements.txt[/yellow]")
+        console.print(f"\n[red]Missing dependency: {e}[/red]")
+        console.print(
+            f"[yellow]Install required packages with: {escape(_get_install_hint(provider))}[/yellow]"
+        )
+        console.print("[dim]Run 'lm-cloud-inventory check-deps' to diagnose dependency issues[/dim]")
         sys.exit(1)
 
     except PermissionError as e:
@@ -332,29 +393,12 @@ def run(
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             temp_inventory = f.name
 
-        if provider == 'aws':
-            from .collectors import collect_aws
-            use_org = bool(organization)
-            inventory = collect_aws(
-                profile=profile,
-                region=region,
-                use_organizations=use_org,
-                organization_role=organization if use_org else None,
-                output_path=temp_inventory
-            )
-
-        elif provider == 'azure':
-            from .collectors import collect_azure
-            subscription_ids = list(subscription) if subscription else None
-            inventory = collect_azure(subscriptions=subscription_ids, output_path=temp_inventory)
-
-        elif provider == 'gcp':
-            from .collectors import collect_gcp
-            inventory = collect_gcp(project_id=project, organization_id=organization, output_path=temp_inventory)
-
-        elif provider == 'oci':
-            from .collectors import collect_oci
-            inventory = collect_oci(compartment_id=compartment, output_path=temp_inventory)
+        inventory = _dispatch_collect(
+            provider, temp_inventory,
+            profile=profile, region=region,
+            subscription=subscription, project=project,
+            organization=organization, compartment=compartment,
+        )
 
         from .calculator import LicenseCalculator
 
@@ -384,8 +428,11 @@ def run(
         console.print(f"\n[green]✓ Summary saved to {output}[/green]\n")
 
     except ImportError as e:
-        console.print(f"[red]Missing dependency: {e}[/red]")
-        console.print("[yellow]Install required packages with: pip install -r requirements.txt[/yellow]")
+        console.print(f"\n[red]Missing dependency: {e}[/red]")
+        console.print(
+            f"[yellow]Install required packages with: {escape(_get_install_hint(provider))}[/yellow]"
+        )
+        console.print("[dim]Run 'lm-cloud-inventory check-deps' to diagnose dependency issues[/dim]")
         sys.exit(1)
 
     except PermissionError as e:
@@ -402,6 +449,81 @@ def run(
     finally:
         if temp_inventory:
             Path(temp_inventory).unlink(missing_ok=True)
+
+
+@cli.command('check-deps')
+@click.option('--provider', '-p',
+              type=click.Choice(['aws', 'azure', 'gcp', 'oci']),
+              help='Check dependencies for a specific provider (default: all)')
+def check_deps(provider: Optional[str]):
+    """
+    Check if required dependencies are installed.
+
+    Verifies that the SDK packages for each cloud provider are importable
+    and reports their versions. Useful for diagnosing installation issues
+    in enterprise environments.
+
+    Examples:
+
+      lm-cloud-inventory check-deps
+
+      lm-cloud-inventory check-deps -p azure
+    """
+    import importlib
+    from importlib.metadata import version as pkg_version, PackageNotFoundError
+
+    providers = [provider] if provider else ['aws', 'azure', 'gcp', 'oci']
+    has_issues = False
+
+    console.print(f"\n[bold blue]Dependency Check[/bold blue]")
+    console.print(f"[dim]Python: {sys.version.split()[0]} ({sys.executable})[/dim]")
+    console.print(f"[dim]Platform: {sys.platform}[/dim]\n")
+    executable = shutil.which('lmci') or shutil.which('lm-cloud-inventory')
+    if executable:
+        console.print(f"[dim]CLI: {executable}[/dim]\n")
+
+    for p in providers:
+        deps = PROVIDER_DEPENDENCIES[p]
+        console.print(
+            f"[bold]{p.upper()}[/bold]  (install: {escape(_get_install_hint(p))})"
+        )
+
+        all_ok = True
+        for pkg_name, import_path in deps:
+            installed_version = None
+            try:
+                installed_version = pkg_version(pkg_name)
+            except PackageNotFoundError:
+                pass
+
+            if installed_version:
+                try:
+                    importlib.import_module(import_path)
+                    console.print(f"  [green]✓[/green] {pkg_name} {installed_version}")
+                except ImportError as e:
+                    console.print(
+                        f"  [red]✗[/red] {pkg_name} {installed_version} "
+                        f"[red](installed but import failed: {e})[/red]"
+                    )
+                    all_ok = False
+                    has_issues = True
+            else:
+                console.print(f"  [red]✗[/red] {pkg_name} [red]not installed[/red]")
+                all_ok = False
+                has_issues = True
+
+        if all_ok:
+            console.print(f"  [green]All dependencies satisfied.[/green]")
+        console.print()
+
+    if has_issues:
+        console.print("[yellow]Some dependencies are missing or broken.[/yellow]")
+        console.print(
+            f"[yellow]Install all providers: {escape(_get_all_install_hint())}[/yellow]\n"
+        )
+        sys.exit(1)
+    else:
+        console.print("[green]All checked dependencies are installed and importable.[/green]\n")
 
 
 @cli.command()
@@ -422,58 +544,59 @@ def permissions(provider: Optional[str]):
         console.print("-" * 40)
 
         if p == 'aws':
-            console.print("""
-Required IAM permissions:
-  - resource-explorer-2:Search
-  - resource-explorer-2:ListViews
-  - resource-explorer-2:GetView
-  - sts:GetCallerIdentity
-
-For AWS Organizations:
-  - organizations:ListAccounts
-  - sts:AssumeRole (for member accounts)
-
-Recommended: Use AWS Resource Explorer with an aggregator index.
-See docs/PERMISSIONS.md for full policy examples.
-            """)
+            console.print(
+                "\nRequired IAM permissions:\n"
+                "  - resource-explorer-2:Search\n"
+                "  - resource-explorer-2:ListResources\n"
+                "  - resource-explorer-2:ListViews\n"
+                "  - resource-explorer-2:GetView\n"
+                "  - sts:GetCallerIdentity\n"
+                "\n"
+                "For AWS Organizations:\n"
+                "  - organizations:ListAccounts\n"
+                "  - sts:AssumeRole (for member accounts)\n"
+                "\n"
+                "Recommended: Use AWS Resource Explorer with an aggregator index.\n"
+                "See docs/PERMISSIONS.md for full policy examples.\n"
+            )
 
         elif p == 'azure':
-            console.print("""
-Required role: Reader
-
-Assign at subscription or management group level:
-  az role assignment create \\
-    --assignee <user-or-sp> \\
-    --role "Reader" \\
-    --scope "/subscriptions/<sub-id>"
-
-See docs/PERMISSIONS.md for full instructions.
-            """)
+            console.print(
+                "\nRequired role: Reader\n"
+                "\n"
+                "Assign at subscription or management group level:\n"
+                '  az role assignment create \\\n'
+                '    --assignee <user-or-sp> \\\n'
+                '    --role "Reader" \\\n'
+                '    --scope "/subscriptions/<sub-id>"\n'
+                "\n"
+                "See docs/PERMISSIONS.md for full instructions.\n"
+            )
 
         elif p == 'gcp':
-            console.print("""
-Required role: roles/cloudasset.viewer
-
-Grant access:
-  gcloud projects add-iam-policy-binding <project> \\
-    --member="user:you@example.com" \\
-    --role="roles/cloudasset.viewer"
-
-See docs/PERMISSIONS.md for full instructions.
-            """)
+            console.print(
+                "\nRequired role: roles/cloudasset.viewer\n"
+                "\n"
+                "Grant access:\n"
+                "  gcloud projects add-iam-policy-binding <project> \\\n"
+                '    --member="user:you@example.com" \\\n'
+                '    --role="roles/cloudasset.viewer"\n'
+                "\n"
+                "See docs/PERMISSIONS.md for full instructions.\n"
+            )
 
         elif p == 'oci':
-            console.print("""
-Required policy:
-  Allow group <group> to inspect all-resources in tenancy
-
-Create policy in OCI Console or via CLI:
-  oci iam policy create \\
-    --name "LMInventoryReadOnly" \\
-    --statements '["Allow group LMInventory to inspect all-resources in tenancy"]'
-
-See docs/PERMISSIONS.md for full instructions.
-            """)
+            console.print(
+                "\nRequired policy:\n"
+                "  Allow group <group> to inspect all-resources in tenancy\n"
+                "\n"
+                "Create policy in OCI Console or via CLI:\n"
+                "  oci iam policy create \\\n"
+                '    --name "LMInventoryReadOnly" \\\n'
+                '    --statements \'["Allow group LMInventory to inspect all-resources in tenancy"]\'\n'
+                "\n"
+                "See docs/PERMISSIONS.md for full instructions.\n"
+            )
 
 
 def main():

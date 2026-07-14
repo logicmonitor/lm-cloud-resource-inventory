@@ -3,7 +3,7 @@
 import logging
 from typing import Dict, List, Optional
 
-from .base import BaseCollector
+from .base import BaseCollector, require_import, retry_api_call
 
 logger = logging.getLogger(__name__)
 
@@ -20,9 +20,9 @@ class GCPCollector(BaseCollector):
 
     def __init__(
         self,
-        project_id: str = None,
-        organization_id: str = None,
-        folder_id: str = None
+        project_id: Optional[str] = None,
+        organization_id: Optional[str] = None,
+        folder_id: Optional[str] = None,
     ):
         """
         Initialize the GCP collector.
@@ -42,14 +42,8 @@ class GCPCollector(BaseCollector):
     def _get_client(self):
         """Get Cloud Asset Inventory client."""
         if self._client is None:
-            try:
-                from google.cloud import asset_v1
-                self._client = asset_v1.AssetServiceClient()
-            except ImportError as exc:
-                raise ImportError(
-                    "google-cloud-asset package is required. "
-                    "Install with: pip install google-cloud-asset"
-                ) from exc
+            asset_v1 = require_import('google.cloud.asset_v1', 'google-cloud-asset', 'gcp')
+            self._client = asset_v1.AssetServiceClient()
         return self._client
 
     def _get_scope(self) -> str:
@@ -60,6 +54,16 @@ class GCPCollector(BaseCollector):
             Scope string (organizations/X, folders/X, or projects/X).
         """
         if self.organization_id:
+            if self.project_id:
+                logger.warning(
+                    "Both organization_id and project_id provided; "
+                    "using organization scope (project_id will be ignored)"
+                )
+            if self.folder_id:
+                logger.warning(
+                    "Both organization_id and folder_id provided; "
+                    "using organization scope (folder_id will be ignored)"
+                )
             return f"organizations/{self.organization_id}"
         elif self.folder_id:
             return f"folders/{self.folder_id}"
@@ -113,7 +117,7 @@ class GCPCollector(BaseCollector):
             elif self.project_id:
                 logger.info("Scope: Project %s", self.project_id)
 
-            from google.cloud import asset_v1
+            asset_v1 = require_import('google.cloud.asset_v1', 'google-cloud-asset', 'gcp')
 
             request = asset_v1.SearchAllResourcesRequest(
                 scope=scope,
@@ -149,11 +153,12 @@ class GCPCollector(BaseCollector):
             List of inventory records with resource counts.
         """
         logger.info("Starting GCP resource collection via Cloud Asset Inventory")
+        self._errors_encountered = False
 
         client = self._get_client()
         scope = self._get_scope()
 
-        from google.cloud import asset_v1
+        asset_v1 = require_import('google.cloud.asset_v1', 'google-cloud-asset', 'gcp')
 
         request = asset_v1.SearchAllResourcesRequest(
             scope=scope,
@@ -166,7 +171,8 @@ class GCPCollector(BaseCollector):
 
         try:
             logger.info("Scanning resources...")
-            for resource in client.search_all_resources(request):
+            results_iter = retry_api_call(client.search_all_resources, request)
+            for resource in results_iter:
                 asset_type = resource.asset_type
 
                 name = resource.name
@@ -231,10 +237,10 @@ class GCPCollector(BaseCollector):
 
 
 def collect_gcp(
-    project_id: str = None,
-    organization_id: str = None,
-    folder_id: str = None,
-    output_path: str = None
+    project_id: Optional[str] = None,
+    organization_id: Optional[str] = None,
+    folder_id: Optional[str] = None,
+    output_path: Optional[str] = None,
 ) -> List[Dict]:
     """
     Convenience function to collect GCP resources.

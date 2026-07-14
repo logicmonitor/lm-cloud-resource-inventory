@@ -56,6 +56,7 @@ If you prefer a custom policy with minimal permissions:
             "Effect": "Allow",
             "Action": [
                 "resource-explorer-2:Search",
+                "resource-explorer-2:ListResources",
                 "resource-explorer-2:GetView",
                 "resource-explorer-2:ListViews",
                 "resource-explorer-2:GetIndex",
@@ -106,6 +107,7 @@ If collecting resources across multiple accounts in an AWS Organization, you nee
             "Effect": "Allow",
             "Action": [
                 "resource-explorer-2:Search",
+                "resource-explorer-2:ListResources",
                 "resource-explorer-2:GetView",
                 "resource-explorer-2:ListViews",
                 "resource-explorer-2:GetIndex",

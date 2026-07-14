@@ -3,7 +3,7 @@
 import logging
 from typing import Dict, List, Optional
 
-from .base import BaseCollector
+from .base import BaseCollector, require_import, retry_api_call
 
 logger = logging.getLogger(__name__)
 
@@ -39,10 +39,10 @@ class AWSCollector(BaseCollector):
 
     def __init__(
         self,
-        profile_name: str = None,
+        profile_name: Optional[str] = None,
         region: str = "us-east-1",
         use_organizations: bool = False,
-        organization_role: str = None
+        organization_role: Optional[str] = None,
     ):
         """
         Initialize the AWS collector.
@@ -66,29 +66,22 @@ class AWSCollector(BaseCollector):
 
     def _get_session(self, profile_name: str = None, credentials: Dict = None):
         """Get boto3 session."""
-        try:
-            import boto3
+        boto3 = require_import('boto3', 'boto3', 'aws')
 
-            if credentials:
-                return boto3.Session(
-                    aws_access_key_id=credentials['AccessKeyId'],
-                    aws_secret_access_key=credentials['SecretAccessKey'],
-                    aws_session_token=credentials.get('SessionToken'),
-                    region_name=self.region
-                )
-            elif profile_name or self.profile_name:
-                return boto3.Session(
-                    profile_name=profile_name or self.profile_name,
-                    region_name=self.region
-                )
-            else:
-                return boto3.Session(region_name=self.region)
-
-        except ImportError as exc:
-            raise ImportError(
-                "boto3 package is required. "
-                "Install with: pip install boto3"
-            ) from exc
+        if credentials:
+            return boto3.Session(
+                aws_access_key_id=credentials['AccessKeyId'],
+                aws_secret_access_key=credentials['SecretAccessKey'],
+                aws_session_token=credentials.get('SessionToken'),
+                region_name=self.region
+            )
+        elif profile_name or self.profile_name:
+            return boto3.Session(
+                profile_name=profile_name or self.profile_name,
+                region_name=self.region
+            )
+        else:
+            return boto3.Session(region_name=self.region)
 
     def _get_default_session(self):
         """Get the default boto3 session."""
@@ -162,12 +155,16 @@ class AWSCollector(BaseCollector):
 
         return indexes
 
-    def _apply_index_topology(self, indexes: List[Dict]):
+    @staticmethod
+    def _parse_index_topology(indexes: List[Dict]) -> tuple:
         """
-        Parse index list and store aggregator/local region info.
-        
+        Parse index list and return (aggregator_region, sorted_local_regions).
+
         Args:
             indexes: List of index dicts from list_indexes API.
+
+        Returns:
+            Tuple of (aggregator_region or None, sorted list of local regions).
         """
         aggregator_region = None
         local_regions = []
@@ -180,7 +177,18 @@ class AWSCollector(BaseCollector):
             else:
                 local_regions.append(idx_region)
 
-        self._local_index_regions = sorted(local_regions)
+        return aggregator_region, sorted(local_regions)
+
+    def _apply_index_topology(self, indexes: List[Dict]):
+        """
+        Parse index list and store aggregator/local region info.
+
+        Args:
+            indexes: List of index dicts from list_indexes API.
+        """
+        aggregator_region, local_regions = self._parse_index_topology(indexes)
+
+        self._local_index_regions = local_regions
 
         if aggregator_region:
             logger.info(
@@ -198,7 +206,7 @@ class AWSCollector(BaseCollector):
                 len(local_regions)
             )
             if local_regions:
-                logger.info("Indexed regions: %s", ", ".join(sorted(local_regions)))
+                logger.info("Indexed regions: %s", ", ".join(local_regions))
             self._aggregator_region = None
 
     def get_account_id(self) -> str:
@@ -264,7 +272,7 @@ class AWSCollector(BaseCollector):
                     if next_token:
                         params['NextToken'] = next_token
 
-                    response = rex.list_resources(**params)
+                    response = retry_api_call(rex.list_resources, **params)
 
                     for resource in response.get('Resources', []):
                         resource_type = resource.get('ResourceType', '')
@@ -342,7 +350,7 @@ class AWSCollector(BaseCollector):
     def _discover_account_indexes(self, session) -> tuple:
         """
         Discover Resource Explorer index topology for an account.
-        
+
         Returns:
             Tuple of (aggregator_region, local_index_regions) or (None, [])
             if Resource Explorer is not enabled.
@@ -354,18 +362,7 @@ class AWSCollector(BaseCollector):
             if not indexes:
                 return None, []
 
-            aggregator_region = None
-            local_regions = []
-
-            for idx in indexes:
-                idx_type = idx.get('Type', 'LOCAL')
-                idx_region = idx.get('Region', '')
-                if idx_type == 'AGGREGATOR':
-                    aggregator_region = idx_region
-                else:
-                    local_regions.append(idx_region)
-
-            return aggregator_region, sorted(local_regions)
+            return self._parse_index_topology(indexes)
 
         except Exception as e:
             logger.warning("Failed to discover indexes: %s", e)
@@ -379,6 +376,7 @@ class AWSCollector(BaseCollector):
             List of inventory records.
         """
         logger.info("Starting AWS resource collection")
+        self._errors_encountered = False
 
         all_inventory = []
 
@@ -402,7 +400,6 @@ class AWSCollector(BaseCollector):
                         continue
                     session = self._get_session(credentials=credentials)
 
-                    # Discover this member account's own index topology
                     agg_region, local_regions = self._discover_account_indexes(session)
                     if not agg_region and not local_regions:
                         logger.warning(
@@ -440,11 +437,11 @@ class AWSCollector(BaseCollector):
 
 
 def collect_aws(
-    profile: str = None,
+    profile: Optional[str] = None,
     region: str = "us-east-1",
     use_organizations: bool = False,
-    organization_role: str = None,
-    output_path: str = None
+    organization_role: Optional[str] = None,
+    output_path: Optional[str] = None,
 ) -> List[Dict]:
     """
     Convenience function to collect AWS resources.
