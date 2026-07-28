@@ -71,8 +71,12 @@ class AzureCollector(BaseCollector):
                 )
             return self.subscription_ids
 
-        azure_resource = require_import('azure.mgmt.resource', 'azure-mgmt-resource', 'azure')
-        sub_client = azure_resource.SubscriptionClient(self._get_credential())
+        azure_subscriptions = require_import(
+            'azure.mgmt.resource.subscriptions',
+            'azure-mgmt-resource-subscriptions',
+            'azure',
+        )
+        sub_client = azure_subscriptions.SubscriptionClient(self._get_credential())
         subscriptions = []
         self._subscription_info = []
 

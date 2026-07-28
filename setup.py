@@ -37,7 +37,7 @@ setup(
         "azure": [
             "azure-identity>=1.25.1",
             "azure-mgmt-resourcegraph>=8.0.1",
-            "azure-mgmt-resource>=24.0.0",
+            "azure-mgmt-resource-subscriptions>=1.0.0",
         ],
         "gcp": ["google-cloud-asset>=4.1.0"],
         "oci": ["oci>=2.164.2"],
@@ -45,7 +45,7 @@ setup(
             "boto3>=1.42.15",
             "azure-identity>=1.25.1",
             "azure-mgmt-resourcegraph>=8.0.1",
-            "azure-mgmt-resource>=24.0.0",
+            "azure-mgmt-resource-subscriptions>=1.0.0",
             "google-cloud-asset>=4.1.0",
             "oci>=2.164.2",
         ],

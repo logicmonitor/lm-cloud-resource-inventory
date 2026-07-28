@@ -39,7 +39,7 @@ PROVIDER_DEPENDENCIES = {
     'azure': [
         ('azure-identity', 'azure.identity'),
         ('azure-mgmt-resourcegraph', 'azure.mgmt.resourcegraph'),
-        ('azure-mgmt-resource', 'azure.mgmt.resource'),
+        ('azure-mgmt-resource-subscriptions', 'azure.mgmt.resource.subscriptions'),
     ],
     'gcp': [('google-cloud-asset', 'google.cloud.asset_v1')],
     'oci': [('oci', 'oci')],

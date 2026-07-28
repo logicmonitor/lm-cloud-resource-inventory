@@ -7,7 +7,7 @@ boto3>=1.42.15
 # Azure SDK
 azure-identity>=1.25.1
 azure-mgmt-resourcegraph>=8.0.1
-azure-mgmt-resource>=24.0.0
+azure-mgmt-resource-subscriptions>=1.0.0
 
 # GCP SDK
 google-cloud-asset>=4.1.0
