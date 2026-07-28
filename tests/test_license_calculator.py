@@ -16,7 +16,7 @@ def sample_mappings():
         "aws": {
             "ec2:instance": {"category": "IaaS", "unit": "Instance"},
             "lambda:function": {"category": "PaaS", "unit": "Function"},
-            "s3:bucket": {"category": "Non-Compute", "unit": "Bucket"},
+            "s3:bucket": {"category": "No-Charge", "unit": "Bucket"},
         },
         "azure": {
             "microsoft.compute/virtualmachines": {"category": "IaaS", "unit": "VM"},
@@ -162,9 +162,32 @@ class TestCalculate:
         totals = results["summary"]["totals"]
         assert totals["IaaS"] == 13
         assert totals["PaaS"] == 21
-        assert totals["Non-Compute"] == 5
+        assert totals.get("No-Charge") == 5
+        assert "Non-Compute" not in totals
 
         assert results["summary"]["hybrid_units"] == 13 + math.ceil(21 / 7)
+
+    def test_legacy_non_compute_maps_to_no_charge(self, sample_rules):
+        calc = LicenseCalculator(
+            resource_mappings={
+                "aws": {
+                    "s3:bucket": {"category": "Non-Compute", "unit": "Bucket"},
+                }
+            },
+            license_rules=sample_rules,
+        )
+        assert calc.get_category("aws", "s3:bucket") == "No-Charge"
+
+    def test_non_compute_excluded_from_summary_csv(self, calculator, sample_inventory, tmp_path):
+        results = calculator.calculate(sample_inventory)
+        out = tmp_path / "summary.csv"
+        calculator.save_summary_csv(results, str(out))
+        content = out.read_text(encoding="utf-8")
+        assert "s3:bucket" not in content
+        assert "Non-Compute" not in content
+        assert "No-Charge" not in content
+        assert "ec2:instance" in content
+        assert "lambda:function" in content
 
     def test_by_provider_are_plain_dicts(self, calculator, sample_inventory):
         results = calculator.calculate(sample_inventory)

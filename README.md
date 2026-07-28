@@ -8,11 +8,14 @@ This tool collects resource inventory from cloud providers and calculates LogicM
 
 - **IaaS** - Virtual machines and compute instances
 - **PaaS** - Managed services, containers, serverless functions
-- **Non-Compute** - Storage, networking, and other infrastructure resources
+
+Storage, networking, and other former Non-Compute types are collected but excluded from license totals.
 
 ## Quick Start
 
 ### Installation
+
+Install from [PyPI](https://pypi.org/project/lm-cloud-inventory/):
 
 ```bash
 python3 -m pip install "lm-cloud-inventory[all]"
@@ -338,7 +341,7 @@ aws,123456789012,PaaS,lambda:function,us-east-1,28
 
 TOTAL,,IaaS,,,57
 TOTAL,,PaaS,,,28
-TOTAL,,Non-Compute,,,125
+TOTAL,,HYBRID UNITS,,,60
 ```
 
 ### Detailed CSV (with `-d` flag)

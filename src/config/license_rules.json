@@ -13,13 +13,8 @@
       "billing_model": "Per service unit"
     },
     {
-      "name": "Non-Compute",
-      "description": "Infrastructure resources that are not compute instances (storage, networking, etc.)",
-      "billing_model": "Per resource"
-    },
-    {
       "name": "No-Charge",
-      "description": "Resources monitored at no additional cost",
+      "description": "Resources monitored at no additional cost (includes former Non-Compute types such as storage and networking)",
       "billing_model": "Free"
     }
   ],
