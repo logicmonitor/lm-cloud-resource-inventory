@@ -22,10 +22,13 @@ class LicenseCalculator:
     Calculate LogicMonitor license requirements from collected inventory.
     
     This class processes raw inventory data (JSON) and applies resource
-    mappings to categorize resources into IaaS, PaaS, and Non-Compute.
+    mappings to categorize resources into IaaS and PaaS for licensing.
+    Non-Compute, No-Charge, and Unsupported types are excluded from license totals.
     """
 
-    CATEGORIES = ["IaaS", "PaaS", "Non-Compute", "No-Charge", "Unsupported"]
+    CATEGORIES = ["IaaS", "PaaS", "No-Charge", "Unsupported"]
+    BILLABLE_CATEGORIES = ["IaaS", "PaaS"]
+    EXCLUDED_FROM_LICENSE = frozenset({"Unsupported", "No-Charge", "Non-Compute"})
 
     def __init__(
         self,
@@ -75,7 +78,7 @@ class LicenseCalculator:
             resource_type: Provider-specific resource type.
             
         Returns:
-            Category string (IaaS, PaaS, Non-Compute, No-Charge, or Unsupported).
+            Category string (IaaS, PaaS, No-Charge, or Unsupported).
         """
         # Check no-charge resources first
         no_charge = self.license_rules.get('no_charge_resources', {}).get(provider, [])
@@ -89,17 +92,23 @@ class LicenseCalculator:
         # Try exact match first
         resource_info = provider_mappings.get(resource_type)
         if resource_info:
-            return resource_info.get('category', 'Unsupported')
+            return self._normalize_category(resource_info.get('category', 'Unsupported'))
 
         # Try case-insensitive match
         resource_type_lower = resource_type.lower()
         for mapped_type, info in provider_mappings.items():
             if mapped_type.lower() == resource_type_lower:
-                return info.get('category', 'Unsupported')
+                return self._normalize_category(info.get('category', 'Unsupported'))
 
         # Not found
         self._unsupported_types.add((provider, resource_type))
         return "Unsupported"
+
+    def _normalize_category(self, category: str) -> str:
+        """Map legacy Non-Compute to No-Charge (excluded from licensing)."""
+        if category == "Non-Compute":
+            return "No-Charge"
+        return category
 
     def _matches_pattern(self, resource_type: str, pattern: str) -> bool:
         """
@@ -240,7 +249,7 @@ class LicenseCalculator:
 
             # Sort by provider, category, resource type, region for clean output
             sorted_records = sorted(
-                [r for r in results['detailed'] if r['category'] not in ('Unsupported', 'No-Charge')],
+                [r for r in results['detailed'] if r['category'] not in self.EXCLUDED_FROM_LICENSE],
                 key=lambda x: (x['provider'], x['category'], x['resource_type'], x['region'])
             )
 
@@ -257,8 +266,8 @@ class LicenseCalculator:
             # Add blank row before totals
             writer.writerow([])
 
-            # Add totals rows
-            for category in ['IaaS', 'PaaS', 'Non-Compute']:
+            # Add totals rows (IaaS / PaaS only)
+            for category in self.BILLABLE_CATEGORIES:
                 count = results['summary']['totals'].get(category, 0)
                 if count > 0:
                     writer.writerow(['TOTAL', '', category, '', '', count])
@@ -284,7 +293,7 @@ class LicenseCalculator:
             writer.writerow(['Provider', 'Account', 'Region', 'ResourceType', 'Category', 'Count'])
 
             for record in results['detailed']:
-                if record['category'] != 'Unsupported':
+                if record['category'] not in self.EXCLUDED_FROM_LICENSE:
                     writer.writerow([
                         record['provider'],
                         record['account_id'],
@@ -311,7 +320,7 @@ class LicenseCalculator:
         # Aggregate counts across regions for cleaner CLI output
         breakdown = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
         for record in results['detailed']:
-            if record['category'] not in ('Unsupported', 'No-Charge'):
+            if record['category'] not in self.EXCLUDED_FROM_LICENSE:
                 provider = record['provider']
                 category = record['category']
                 resource_type = record['resource_type']
@@ -323,7 +332,7 @@ class LicenseCalculator:
             print("-" * 40)
 
             provider_categories = results['summary']['by_provider'].get(provider, {})
-            for category in ['IaaS', 'PaaS', 'Non-Compute']:
+            for category in self.BILLABLE_CATEGORIES:
                 cat_total = provider_categories.get(category, 0)
                 if cat_total > 0:
                     print(f"  {category:20} {cat_total:>10}")
@@ -337,7 +346,7 @@ class LicenseCalculator:
         print("\n" + "=" * 70)
         print("TOTALS")
         print("-" * 40)
-        for category in ['IaaS', 'PaaS', 'Non-Compute']:
+        for category in self.BILLABLE_CATEGORIES:
             count = results['summary']['totals'].get(category, 0)
             if count > 0:
                 print(f"  {category:20} {count:>10}")

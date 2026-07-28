@@ -161,7 +161,7 @@ Processes raw inventory data and applies license rules from configuration files.
 
 **Responsibilities:**
 - Load resource mappings and license rules from `src/config/`
-- Categorize resources into IaaS, PaaS, Non-Compute, No-Charge, or Unsupported
+- Categorize resources into IaaS, PaaS, No-Charge, or Unsupported (former Non-Compute types are No-Charge and excluded from license totals)
 - Apply wildcard pattern matching for no-charge resource filtering
 - Calculate Hybrid Resource Units (IaaS 1:1, PaaS 7:1 rounded up)
 - Generate summary and detailed CSV reports
@@ -217,7 +217,6 @@ aws,123456789012,PaaS,lambda:function,us-east-1,15
 
 TOTAL,,IaaS,,,150
 TOTAL,,PaaS,,,75
-TOTAL,,Non-Compute,,,425
 TOTAL,,HYBRID UNITS,,,161
 ```
 

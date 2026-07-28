@@ -121,7 +121,7 @@ def load_license_rules(path: str = None) -> Dict:
         
     Example:
         {
-            "categories": ["IaaS", "PaaS", "Non-Compute"],
+            "categories": ["IaaS", "PaaS"],
             "no_charge_resources": {
                 "aws": ["waf:*", "shield:*"],
                 "azure": ["microsoft.advisor/*"]
